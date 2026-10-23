@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import org.anikodev.candywrapper.AppGraph
 import org.anikodev.candywrapper.core.model.StatusPill
@@ -107,28 +108,31 @@ fun App(graph: AppGraph, sharedText: String?, consumeShared: () -> Unit) {
     // Keeps scroll positions and drafts of screens under the top one.
     val saveable = rememberSaveableStateHolder()
     Box(Modifier.fillMaxSize().background(Candy.colors.background)) {
-        if (sessions.isEmpty() && nav.stack.size == 1) {
-            Welcome(nav)
-        } else {
-            AppShell(
+        val screen: @Composable () -> Unit = {
+            val s = nav.top
+            saveable.SaveableStateProvider(s.toString()) {
+                when (s) {
+                    is Screen.Main -> if (s.envId != null && s.threadId != null) ThreadScreen(graph, nav, s.envId, s.threadId) else NoThread(sessions.isNotEmpty())
+                    is Screen.NewThread -> NewThreadScreen(graph, nav, s.envId, s.projectId)
+                    is Screen.Diff -> DiffScreen(graph, nav, s)
+                    is Screen.Pair -> PairScreen(graph, nav, s.prefill)
+                    Screen.Connect -> ConnectScreen(graph, nav)
+                    Screen.Settings -> SettingsScreen(graph, nav)
+                    Screen.Diagnostics -> DiagnosticsScreen(graph, nav)
+                }
+            }
+        }
+        when {
+            // Nothing paired yet: no sidebar, only the welcome screen and the screens it opens.
+            sessions.isEmpty() && nav.stack.size == 1 -> Welcome(nav)
+            sessions.isEmpty() -> screen()
+            else -> AppShell(
                 drawer,
                 sidebar = {
                     SidebarHost(graph, nav, main, drawer, onRename = { env, t -> renaming = env to t }) { s, block -> act(s, block) }
                 },
-            ) {
-                val s = nav.top
-                saveable.SaveableStateProvider(s.toString()) {
-                    when (s) {
-                        is Screen.Main -> if (s.envId != null && s.threadId != null) ThreadScreen(graph, nav, s.envId, s.threadId) else NoThread(sessions.isNotEmpty())
-                        is Screen.NewThread -> NewThreadScreen(graph, nav, s.envId, s.projectId)
-                        is Screen.Diff -> DiffScreen(graph, nav, s)
-                        is Screen.Pair -> PairScreen(graph, nav, s.prefill)
-                        Screen.Connect -> ConnectScreen(graph, nav)
-                        Screen.Settings -> SettingsScreen(graph, nav)
-                        Screen.Diagnostics -> DiagnosticsScreen(graph, nav)
-                    }
-                }
-            }
+                content = screen,
+            )
         }
         notice?.let { m ->
             Alert(m, NoticeTone.ERROR, Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(12.dp), action = "Dismiss") { notice = null }
@@ -166,10 +170,13 @@ private fun SidebarHost(
     var archived by remember(session.id) { mutableStateOf(ArchivedList()) }
     // Each opening of the archived list reads it again; it is not cached.
     var archivedLoads by remember(session.id) { mutableIntStateOf(0) }
-    LaunchedEffect(archivedLoads) {
-        if (archivedLoads == 0 || !archived.open) return@LaunchedEffect
+    // Keyed on the open state too, so closing the list cancels a read still on its way.
+    LaunchedEffect(archivedLoads, archived.open) {
+        if (archivedLoads == 0 || !archived.open || archived.model != null || archived.error != null) return@LaunchedEffect
         archived = try {
             ArchivedList(open = true, model = session.archivedThreads())
+        } catch (e: TimeoutCancellationException) {
+            ArchivedList(open = true, error = "The computer did not answer in time.")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
