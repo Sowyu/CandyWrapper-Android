@@ -271,15 +271,8 @@ object SidebarModel {
         if (expanded) list else list.filter { it.key == openKey }
 
     /**
-     * `shouldNavigateAfterThreadPark`: parking the open thread moves on only when the park took,
-     * that is the thread is settled or effectively snoozed now.
-     */
-    fun shouldNavigateAfterPark(threadKey: String, openKey: String?, settling: Boolean, thread: ThreadSummary?, nowMs: Long): Boolean =
-        threadKey == openKey && thread != null && (if (settling) thread.section == 3 else thread.sectionAt(nowMs) == 2)
-
-    /**
      * `planForwardNavigation`: after parking the open thread, the next pinned or active card after
-     * it, wrapping round, else null (T3 then starts a new thread in its project).
+     * it, wrapping round, else null. The caller plans before the park changes the sections.
      */
     fun nextAfterPark(sections: SidebarSections, threadKey: String, parking: Set<String> = emptySet()): ThreadSummary? {
         val cards = sections.pinned + sections.active

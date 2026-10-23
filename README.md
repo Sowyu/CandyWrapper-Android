@@ -16,17 +16,19 @@ Use the release APK when judging speed. Debug builds run Compose without optimiz
 
 - Pair a computer by pasting the link from `npx t3 pair`, or share it to the app.
 - Sign in to T3 Connect with an email code or a password, list the linked computers and connect to them.
-- T3 Code's sidebar as the main navigation: a drawer on phones (header button or a swipe from the left edge), always beside the thread on tablets and unfolded foldables. It has the computer switcher, search, every project with its threads, status and unread marks, rename, archive, mark read or unread, and the archived list.
+- T3 Code's sidebar as the main navigation: a drawer on phones (header button or a swipe from the left edge), always beside the thread on tablets and unfolded foldables. Pinned and active threads are cards with their status; snoozed and settled threads sit on shelves below. Long press a thread to pin, snooze, settle, rename, mark read or unread, or archive it, with Undo in the footer. Search, a project filter and the archived list are there too.
+- The machine switcher at the top picks one computer or All machines, which lists every computer's threads together, merges the same repository across computers and names each thread's machine. With more than one computer it starts on All machines and remembers the choice.
+- Settings > Legacy features brings back T3's per-project sidebar and plan mode. Both are off by default, as in T3, and stay on the phone.
 - The app opens on the last thread you had open, drawn from the phone's copy before any network.
 - A live thread view: Markdown with coloured code blocks, tool calls that expand to their output or diff, run diffs from checkpoint cards, older history as you scroll up, and timestamps.
-- A composer: send, queue or steer during a run, Stop, model and effort, access mode, plan mode and image attachments. Start a new thread in any project.
+- A composer: send, queue or steer during a run, Stop, model and effort, access mode and image attachments, plus plan mode when it is turned on. Start a new thread in any project on any computer.
 - Approvals and agent questions answered in place of the composer, and queued messages you can steer or cancel.
 - Opening a thread marks it read on the computer.
 - The thread list and recently opened threads are stored on the phone, so the app opens to them before any network.
 - T3's desktop look adapted to a phone, in light and dark, following the system or set in Settings. [docs/design.md](docs/design.md) lists the sources and where it differs from T3.
 - A Timing screen with every startup, connect and thread-open step in milliseconds, also logged to logcat with tag `CWTiming`.
 
-Not built yet: terminal, HTML renders, file mentions and slash commands, editing queued messages, and the full set of thread actions (pin, snooze, settle, fork).
+Not built yet: terminal, HTML renders, file mentions and slash commands, editing queued messages, dragging threads to reorder them, a custom snooze time, and fork.
 
 ## Build
 

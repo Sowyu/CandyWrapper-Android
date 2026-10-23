@@ -52,6 +52,7 @@ Threads:
 - Markdown renders as Compose text. There is no WebView. Code blocks are tokenized for colour during the parse, off the main thread; diffs are parsed on `Dispatchers.Default` and drawn one line per list item.
 - Nothing animates while idle. Presses fill and scale over T3's 150 ms; menus fade in over 150 ms; the drawer and sheets move over 200 ms, transform and alpha only. "Working" is static text the minute clock updates, and the working status is a static dot.
 - Sidebar rows get the same callbacks on every update, so a thread-list change recomposes only the rows whose thread changed.
+- The new sidebar's model (project groups across computers, the sections, their sort) is rebuilt on `Dispatchers.Default` from the sessions' cached lists whenever one changes, conflated, and the last model stays on screen until the next is ready. The first frame never waits for it. A snooze's end schedules one rebuild at that time; nothing polls.
 - Tool output and edit diffs load only when a row is expanded, through `orchestration.getTurnItem`.
 
 ## Measured on the JVM

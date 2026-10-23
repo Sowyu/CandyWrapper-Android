@@ -70,6 +70,22 @@ class MenuShotTest {
     @Test fun actionsLight() = screen("menu-thread-actions-phone", false) { Actions() }
     @Test fun actionsDark() = screen("menu-thread-actions-phone", true) { Actions() }
 
+    /** A card's long-press actions: pin, snooze, settle, then the thread's own. */
+    private fun rowMenu(dark: Boolean) = screen("menu-sidebar-row-phone", dark) {
+        SidebarPanel(Fixtures.environments[0], Fixtures.environments, Fixtures.data, "e1:t1", Fixtures.NOW, SidebarActions(), initialMenu = "e1:t3")
+    }
+    @Test fun rowMenuLight() = rowMenu(false)
+    @Test fun rowMenuDark() = rowMenu(true)
+
+    /** New thread with more than one project asks where; t3code is on both machines. */
+    private fun newThread(dark: Boolean) = screen("dialog-new-thread-phone", dark) {
+        Box(Modifier.fillMaxSize()) {
+            NewThreadSheet(Fixtures.allData.groups, null, Fixtures.environments.associate { it.id to it.label }, {}, {}) { _, _ -> }
+        }
+    }
+    @Test fun newThreadLight() = newThread(false)
+    @Test fun newThreadDark() = newThread(true)
+
     private fun rename(dark: Boolean) = screen("dialog-rename-phone", dark) {
         Box(Modifier.fillMaxSize()) { RenameSheet("Copy T3's sidebar into the phone app", {}) {} }
     }

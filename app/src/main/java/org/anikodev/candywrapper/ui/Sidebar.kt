@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,12 +17,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -48,442 +50,562 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.SolidColor
-import org.anikodev.candywrapper.core.model.EnvironmentKind
-import org.anikodev.candywrapper.core.model.ProjectGroup
 import org.anikodev.candywrapper.core.model.StatusPill
-import org.anikodev.candywrapper.core.model.ThreadListModel
 import org.anikodev.candywrapper.core.model.ThreadSummary
-import org.anikodev.candywrapper.core.sync.BlockReason
+import org.anikodev.candywrapper.core.sidebar.SidebarData
+import org.anikodev.candywrapper.core.sidebar.SidebarModel
+import org.anikodev.candywrapper.core.sidebar.SidebarProjectGroup
+import org.anikodev.candywrapper.core.sidebar.SidebarSection
+import org.anikodev.candywrapper.core.sidebar.SidebarStatus
+import org.anikodev.candywrapper.core.sidebar.Snooze
+import org.anikodev.candywrapper.core.sidebar.TopStatus
 import org.anikodev.candywrapper.core.sync.ConnectionState
 
-/** One computer as the sidebar's switcher shows it. */
+/** Whether the Snoozed and Settled shelves are open. */
 @Immutable
-data class SidebarEnvironment(
-    val id: String,
-    val label: String,
-    val kind: EnvironmentKind,
-    val state: ConnectionState,
-    /** Threads waiting on an approval or an answer. */
-    val waiting: Int = 0,
-)
-
-/** The archived list: closed, loading, loaded or failed. */
-@Immutable
-data class ArchivedList(val open: Boolean = false, val model: ThreadListModel? = null, val error: String? = null)
-
-/** What the sidebar asks of the app. */
-class SidebarActions(
-    val openThread: (ThreadSummary) -> Unit = {},
-    val newThread: (projectId: String) -> Unit = {},
-    val switchEnvironment: (String) -> Unit = {},
-    val pair: () -> Unit = {},
-    val connect: () -> Unit = {},
-    val settings: () -> Unit = {},
-    val timing: () -> Unit = {},
-    val retry: (BlockReason?) -> Unit = {},
-    val rename: (ThreadSummary) -> Unit = {},
-    val toggleRead: (ThreadSummary) -> Unit = {},
-    val archive: (ThreadSummary) -> Unit = {},
-    val unarchive: (ThreadSummary) -> Unit = {},
-    val toggleArchived: () -> Unit = {},
-    /** Pull-to-refresh: check the connection now. */
-    val refresh: () -> Unit = {},
-)
-
-/** `DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT` (contracts settings.ts): threads a project shows before "Show more". */
-const val ThreadPreviewCount = 6
+data class Shelves(val snoozed: Boolean = false, val settled: Boolean = false)
 
 /**
- * T3's sidebar (LegacySidebar.tsx, the project tree): the computer switcher where T3 puts its
- * wordmark, search, every project with its threads nested under a guide line, and Settings at the
- * bottom. Drawn on `--sidebar` with the sidebar palette.
+ * T3's sidebar (Sidebar.tsx, the default since the flat redesign): the machine switcher where T3
+ * puts its wordmark, the thread header (search, project filter, New thread), then one flat list of
+ * every thread across the machine scope: pinned and active threads as cards, then the Snoozed and
+ * Settled shelves as slim rows, held to the bottom while the list is short. Long press opens a
+ * row's actions, since a phone has no hover.
  *
- * State that only the sidebar cares about (search, collapsed projects, "Show more", the open menu)
- * lives here; everything else comes in as immutable models, so rows that did not change are skipped.
+ * [data] is built off the main thread; null draws an empty list rather than a wrong empty state.
  */
 @Composable
 fun SidebarPanel(
     current: SidebarEnvironment?,
     environments: List<SidebarEnvironment>,
-    model: ThreadListModel,
-    activeThreadId: String?,
+    data: SidebarData?,
+    openKey: String?,
     now: Long,
     actions: SidebarActions,
     modifier: Modifier = Modifier,
+    shelves: Shelves = Shelves(),
     archived: ArchivedList = ArchivedList(),
+    undo: UndoNotice? = null,
     initialQuery: String = "",
+    initialMenu: String? = null,
 ) {
     val c = Candy.colors
     var query by rememberSaveable { mutableStateOf(initialQuery) }
-    var collapsed by rememberSaveable { mutableStateOf(emptySet<String>()) }
-    var expanded by rememberSaveable { mutableStateOf(emptySet<String>()) }
-    var menuFor by remember { mutableStateOf<String?>(null) }
-    val list = if (archived.open) archived.model ?: ThreadListModel() else model
-    val groups = remember(list, query) { filterGroups(list.groups, query) }
-    val searching = query.isNotBlank()
+    var menuFor by remember { mutableStateOf(initialMenu) }
+    // The settled tail restarts whenever the project filter changes.
+    var settledCount by remember(data?.scope?.key) { mutableIntStateOf(SidebarModel.SETTLED_INITIAL) }
+    val machines = remember(environments) { environments.associateBy { it.id } }
+    // Several machines in one list: each row names its machine.
+    val tagMachines = current?.all == true && environments.size > 1
+    val searching = query.isNotBlank() && !archived.open
+    val results = remember(data, query) { data?.let { SidebarModel.search(it.sections.all, query) }.orEmpty() }
     val pull = rememberPullRefresh(actions.refresh)
+
+    @Composable
+    fun Menu(thread: ThreadSummary, section: SidebarSection) =
+        RowMenu(thread, section, machines[thread.envId]?.caps ?: MachineCaps(), now, menuFor == thread.key, { menuFor = null }, actions, archived.open)
+
+    fun row(thread: ThreadSummary) = RowInfo(
+        thread = thread,
+        project = data?.projectLabel?.get("${thread.envId}:${thread.projectId}") ?: "Other",
+        machine = if (tagMachines) machines[thread.envId]?.label else null,
+        driver = thread.providerInstanceId?.let { machines[thread.envId]?.caps?.drivers?.get(it) },
+        active = thread.key == openKey,
+    )
 
     Column(modifier.fillMaxSize().background(c.sidebar).windowInsetsPadding(WindowInsets.statusBars)) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            EnvironmentSwitcher(current, environments, actions)
-            SearchRow(query, { query = it }) {
-                val pid = activeThreadId?.let { id -> model.groups.firstOrNull { g -> g.threads.any { it.id == id } } }?.project?.id
-                    ?: model.groups.firstOrNull { it.project != null }?.project?.id
-                if (pid != null) actions.newThread(pid)
-            }
+            MachineSwitcher(current, environments, actions)
+            ThreadHeader(query, { query = it }, data, actions)
         }
-        current?.state?.let { state -> ConnectionAlert(state, actions) }
-        Row(Modifier.fillMaxWidth().height(32.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Txt(if (archived.open) "Archived" else "Projects", CandyType.xsMedium, c.sidebarMutedForeground, modifier = Modifier.weight(1f))
-        }
+        ConnectionAlerts(current, environments, actions)
         Box(Modifier.weight(1f)) {
             when {
-                archived.open && archived.error != null -> SidebarNote(archived.error, "Retry") { actions.toggleArchived(); actions.toggleArchived() }
-                archived.open && archived.model == null -> SidebarNote("Loading archived threads")
-                list.threadCount == 0 && !archived.open -> SidebarNote(
-                    if (current?.state is ConnectionState.Live) "No threads yet. Start one from a project on the computer." else "Threads appear once ${current?.label ?: "a computer"} answers.",
+                archived.open -> ArchivedRows(archived, now, openKey, menuFor, { menuFor = it }, actions, ::row) { t -> Menu(t, SidebarSection.ACTIVE) }
+                data == null -> Unit
+                searching && results.isEmpty() -> EmptyNote("No threads found")
+                searching -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp)) {
+                    items(results, key = { it.key }, contentType = { "slim" }) { t ->
+                        val section = data.sections.sectionOf(t.key) ?: SidebarSection.ACTIVE
+                        SlimRow(row(t), section, now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }, showProject = true) { Menu(t, section) }
+                    }
+                }
+                data.sections.isEmpty -> EmptyNote(
+                    when {
+                        data.projects.isEmpty() && current?.state !is ConnectionState.Live -> "Projects appear once ${if (current?.all == true) "a machine" else current?.label ?: "a computer"} answers."
+                        data.projects.isEmpty() -> "No projects yet"
+                        data.scope != null -> "No threads in ${data.scope?.label} yet"
+                        else -> "No threads yet"
+                    },
                 )
-                list.threadCount == 0 -> SidebarNote("No archived threads.")
-                groups.isEmpty() -> SidebarNote("No thread matches “${query.trim()}”.")
-                else -> LazyColumn(Modifier.fillMaxSize().nestedScroll(pull.connection), contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp)) {
-                    item(key = "pull", contentType = "pull") { PullIndicator(pull, "check the connection") }
-                    for (group in groups) {
-                        val key = group.project?.id ?: "none"
-                        val isCollapsed = key in collapsed && !searching
-                        item(key = "p:$key", contentType = "project") {
-                            ProjectHeader(group, isCollapsed, onToggle = { collapsed = if (key in collapsed) collapsed - key else collapsed + key }, onNewThread = if (archived.open) null else actions.newThread)
+                else -> {
+                    val s = data.sections
+                    val snoozed = SidebarModel.visibleShelf(s.snoozed, shelves.snoozed, openKey)
+                    val settled = SidebarModel.visibleSettled(s.settled, settledCount, shelves.settled, openKey)
+                    val hiddenSettled = if (shelves.settled) s.settled.size - settled.size else 0
+                    val arrangement = remember(s.pinned.size + s.active.size) { ShelvesAtBottom(1 + s.pinned.size + s.active.size) }
+                    LazyColumn(
+                        Modifier.fillMaxSize().nestedScroll(pull.connection),
+                        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                        verticalArrangement = arrangement,
+                    ) {
+                        item(key = "pull", contentType = "pull") { PullIndicator(pull, "check the connection") }
+                        items(s.pinned, key = { it.key }, contentType = { "card" }) { t ->
+                            CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.PINNED) }
                         }
-                        if (!isCollapsed) {
-                            val showAll = searching || key in expanded || group.threads.size <= ThreadPreviewCount
-                            // Keep the open thread visible even when it sits past the preview count.
-                            val shown = if (showAll) group.threads else group.threads.take(ThreadPreviewCount).let { head ->
-                                val active = group.threads.firstOrNull { it.id == activeThreadId }
-                                if (active != null && active !in head) head + active else head
+                        items(s.active, key = { it.key }, contentType = { "card" }) { t ->
+                            CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.ACTIVE) }
+                        }
+                        if (s.snoozed.isNotEmpty()) {
+                            item(key = "h:snoozed", contentType = "shelf") {
+                                ShelfHeader(if (shelves.snoozed) "Snoozed" else "Snoozed (${s.snoozed.size})", shelves.snoozed, info = true, onToggle = actions.toggleSnoozed)
                             }
-                            items(shown, key = { "t:" + it.id }, contentType = { "thread" }) { thread ->
-                                ThreadRow(
-                                    thread, active = thread.id == activeThreadId, now = now, menuOpen = menuFor == thread.id,
-                                    onClick = { actions.openThread(thread) }, onLongClick = { menuFor = thread.id },
-                                ) {
-                                    Menu(menuFor == thread.id, { menuFor = null }, minWidth = 180.dp) {
-                                        if (archived.open) {
-                                            MenuItem("Unarchive", Icons.ArchiveX) { menuFor = null; actions.unarchive(thread) }
-                                        } else {
-                                            MenuItem("Rename thread", Icons.Pencil) { menuFor = null; actions.rename(thread) }
-                                            if (thread.unread || thread.pill == StatusPill.READY) {
-                                                MenuItem(if (thread.unread) "Mark read" else "Mark unread", if (thread.unread) Icons.Eye else Icons.EyeOff) { menuFor = null; actions.toggleRead(thread) }
-                                            }
-                                            MenuSeparator()
-                                            MenuItem("Archive", Icons.Archive, enabled = thread.pill != StatusPill.WORKING) { menuFor = null; actions.archive(thread) }
-                                        }
-                                    }
-                                }
+                            items(snoozed, key = { it.key }, contentType = { "slim" }) { t ->
+                                SlimRow(row(t), SidebarSection.SNOOZED, now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.SNOOZED) }
                             }
-                            if (group.threads.size > ThreadPreviewCount && !searching) {
-                                item(key = "more:$key", contentType = "more") {
-                                    val open = key in expanded
-                                    val hidden = remember(group) { group.threads.drop(ThreadPreviewCount) }
-                                    ShowMoreRow(open, if (open) null else hiddenStatus(hidden)) {
-                                        expanded = if (open) expanded - key else expanded + key
-                                    }
-                                }
+                        }
+                        item(key = "h:settled", contentType = "shelf") {
+                            ShelfHeader(if (shelves.settled) "Settled" else "Settled (${s.settled.size})", shelves.settled, info = false, onToggle = actions.toggleSettled)
+                        }
+                        items(settled, key = { it.key }, contentType = { "slim" }) { t ->
+                            SlimRow(row(t), SidebarSection.SETTLED, now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.SETTLED) }
+                        }
+                        if (hiddenSettled > 0) {
+                            item(key = "more", contentType = "more") {
+                                ShowMore(minOf(hiddenSettled, SidebarModel.SETTLED_PAGE)) { settledCount += SidebarModel.SETTLED_PAGE }
                             }
                         }
                     }
                 }
             }
         }
-        SidebarFooter(archived.open, actions)
+        SidebarFooter(archived.open, actions, undo)
     }
 }
 
-private fun filterGroups(groups: List<ProjectGroup>, query: String): List<ProjectGroup> {
-    val q = query.trim()
-    if (q.isEmpty()) return groups
-    return groups.mapNotNull { g ->
-        val projectHit = g.project?.title?.contains(q, ignoreCase = true) == true
-        val hits = if (projectHit) g.threads else g.threads.filter { it.title.contains(q, ignoreCase = true) }
-        if (hits.isEmpty()) null else ProjectGroup(g.project, hits)
-    }
-}
-
-/** The status a collapsed list shows for its hidden threads: the most urgent one, if any. */
-private fun hiddenStatus(threads: List<ThreadSummary>): StatusPill? =
-    listOf(StatusPill.APPROVAL, StatusPill.INPUT, StatusPill.FAILED, StatusPill.WORKING).firstOrNull { p -> threads.any { it.pill == p } }
-
-/** T3's thread status (Sidebar.logic.ts `resolveThreadStatusPill`): label, text colour and dot colour. */
+/** What a row draws besides the thread: its project's group label, its machine when tagged, its provider. */
 @Immutable
-data class ThreadStatus(val label: String, val color: Color, val dot: Color)
+data class RowInfo(val thread: ThreadSummary, val project: String, val machine: String?, val driver: String?, val active: Boolean)
 
-@Composable
-fun threadStatus(pill: StatusPill, unread: Boolean): ThreadStatus? {
-    val c = Candy.colors
-    return when (pill) {
-        StatusPill.APPROVAL -> ThreadStatus("Pending Approval", c.statusApproval, c.statusApprovalDot)
-        StatusPill.INPUT -> ThreadStatus("Awaiting Input", c.statusInput, c.statusInputDot)
-        StatusPill.WORKING -> ThreadStatus("Working", c.statusWorking, c.statusWorkingDot)
-        StatusPill.WAITING -> ThreadStatus("Waiting", c.sidebarMutedForeground, c.sidebarMutedForeground)
-        StatusPill.FAILED -> ThreadStatus("Failed", c.errorForeground, c.error)
-        StatusPill.LIMITED -> ThreadStatus("Limited", c.warningForeground, c.warning)
-        StatusPill.READY, StatusPill.NONE -> if (unread) ThreadStatus("Completed", c.statusDone, c.statusDoneDot) else null
-    }
-}
-
-/** `ThreadStatusLabel`: a 6dp dot and the label in the status colour, `text-3xs`. Static: no pulse. */
-@Composable
-fun StatusLabel(status: ThreadStatus, compact: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.semantics { contentDescription = status.label }) {
-        StatusDot(status.dot, size = if (compact) 8.dp else 6.dp)
-        if (!compact) Txt(status.label, CandyType.xxs, status.color, maxLines = 1)
+/**
+ * The list's arrangement when it is shorter than the sidebar: rows from the top, and from
+ * [firstShelf] on pushed to the bottom, as T3's `mt-auto` holds the shelves down. A longer list
+ * scrolls and never asks.
+ */
+private class ShelvesAtBottom(private val firstShelf: Int) : Arrangement.Vertical {
+    override val spacing = 0.dp
+    override fun Density.arrange(totalSize: Int, sizes: IntArray, outPositions: IntArray) {
+        val gap = (totalSize - sizes.sum()).coerceAtLeast(0)
+        var y = 0
+        for (i in sizes.indices) {
+            if (i == firstShelf) y += gap
+            outPositions[i] = y
+            y += sizes[i]
+        }
     }
 }
 
 /**
- * The header: the computer switcher (a `SidebarMenuButton size="lg"`), with the connection's real
- * state under the name. It opens a menu of every computer, pairing and T3 Connect.
+ * `SidebarThreadHeader`: the search field, the project filter (`ListFilter`, or the project's
+ * monogram once filtered) and New thread. T3's Add project needs a folder on the computer, so it
+ * is not here.
  */
 @Composable
-private fun EnvironmentSwitcher(current: SidebarEnvironment?, environments: List<SidebarEnvironment>, actions: SidebarActions) {
+private fun ThreadHeader(query: String, onQuery: (String) -> Unit, data: SidebarData?, actions: SidebarActions) {
     val c = Candy.colors
-    var open by remember { mutableStateOf(false) }
-    val source = remember { MutableInteractionSource() }
-    val pressed by source.collectIsPressedAsState()
-    Box {
+    var scopeOpen by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(Radius.lg))
-                .background(if (pressed || open) c.sidebarRowActive else Color.Transparent)
-                .combinedClickable(source, null, role = Role.Button, onClickLabel = "Switch computer") { open = true }
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+            Modifier.weight(1f).height(36.dp).clip(RoundedCornerShape(Radius.md)).padding(start = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(
-                Modifier.size(32.dp).clip(RoundedCornerShape(Radius.md)).background(c.sidebarControlSurface),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(if (current?.kind == EnvironmentKind.CONNECT) Icons.Cloud else Icons.Laptop, c.sidebarForeground, 16.dp)
-            }
-            Column(Modifier.weight(1f)) {
-                Txt(current?.label ?: "No computer", CandyType.smMedium, c.sidebarForeground, maxLines = 1)
-                if (current != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        StatusDot(current.state.dotColor())
-                        Txt(current.state.label(), CandyType.xs, c.sidebarMutedForeground, maxLines = 1)
+            Icon(Icons.Search, c.sidebarIconColor, 16.dp)
+            Spacer(Modifier.width(8.dp))
+            BasicTextField(
+                query, onQuery,
+                Modifier.weight(1f).semantics { contentDescription = "Search threads" },
+                textStyle = CandyType.smMedium.merge(TextStyle(color = c.sidebarForeground)),
+                singleLine = true,
+                cursorBrush = SolidColor(c.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) Txt("Search", CandyType.smMedium, c.sidebarMutedForeground, maxLines = 1)
+                        inner()
+                    }
+                },
+            )
+            if (query.isNotEmpty()) IconButton(Icons.X, "Clear thread search", tint = c.sidebarMutedForeground, size = 12.dp, box = 32.dp) { onQuery("") }
+        }
+        val groups = data?.groups.orEmpty()
+        if (groups.isNotEmpty()) {
+            Box {
+                val scope = data?.scope
+                Box(
+                    Modifier.clip(RoundedCornerShape(Radius.md)).background(if (scopeOpen) c.sidebarRowActive else Color.Transparent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (scope == null) {
+                        IconButton(Icons.ListFilter, "Filter threads by project", tint = c.sidebarMutedForeground, size = 16.dp, box = 36.dp) { scopeOpen = true }
+                    } else {
+                        Box(
+                            Modifier.width(36.dp).height(36.dp).combinedClickable(role = Role.Button, onClickLabel = "Filter threads by project: ${scope.label}") { scopeOpen = true },
+                            contentAlignment = Alignment.Center,
+                        ) { Monogram(scope.label) }
                     }
                 }
+                ScopeMenu(scopeOpen, { scopeOpen = false }, groups, scope, data?.spansMachines == true, actions)
             }
-            Icon(Icons.ChevronsUpDown, c.sidebarMutedForeground, 16.dp)
         }
-        Menu(open, { open = false }, minWidth = 260.dp) {
-            if (environments.isNotEmpty()) MenuLabel("Computers")
-            for (e in environments) {
-                MenuItem(
-                    e.label, if (e.kind == EnvironmentKind.CONNECT) Icons.Cloud else Icons.Laptop,
-                    detail = e.state.label(), selected = e.id == current?.id,
-                    trailing = if (e.waiting > 0) ({ Pill("${e.waiting} waiting", c.statusApproval) }) else null,
-                ) { open = false; actions.switchEnvironment(e.id) }
-            }
-            if (environments.isNotEmpty()) MenuSeparator()
-            MenuItem("Pair a computer", Icons.Plus) { open = false; actions.pair() }
-            MenuItem("T3 Connect", Icons.Cloud) { open = false; actions.connect() }
-        }
+        IconButton(Icons.SquarePen, "New thread", tint = c.sidebarMutedForeground, size = 16.dp, box = 36.dp, onClick = actions.newThreadAnywhere)
     }
 }
 
-/** The connection's dot: success when live, the error colour when it needs the user, muted while it works. */
+/** The project filter's popup: All projects, then every project group, the machines it is on when they differ. */
 @Composable
-fun ConnectionState.dotColor(): Color = when (this) {
-    is ConnectionState.Live -> Candy.colors.success
-    is ConnectionState.Offline, is ConnectionState.Blocked -> Candy.colors.error
-    is ConnectionState.Connecting -> Candy.colors.statusWorkingDot
-    ConnectionState.Idle -> Candy.colors.sidebarMutedForeground
-}
-
-/** The search row: T3's "Search" line with its icon, typed into directly, and New thread at its end. */
-@Composable
-private fun SearchRow(query: String, onQuery: (String) -> Unit, onNewThread: () -> Unit) {
+private fun ScopeMenu(open: Boolean, onDismiss: () -> Unit, groups: List<SidebarProjectGroup>, scope: SidebarProjectGroup?, spans: Boolean, actions: SidebarActions) {
     val c = Candy.colors
-    Row(Modifier.fillMaxWidth().height(40.dp).padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Search, c.sidebarMutedForeground, 16.dp)
-        Spacer(Modifier.width(10.dp))
-        BasicTextField(
-            query, onQuery,
-            Modifier.weight(1f).semantics { contentDescription = "Search threads" },
-            textStyle = CandyType.sm.merge(TextStyle(color = c.sidebarForeground)),
-            singleLine = true,
-            cursorBrush = SolidColor(c.primary),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            decorationBox = { inner ->
-                Box(contentAlignment = Alignment.CenterStart) {
-                    if (query.isEmpty()) Txt("Search", CandyType.sm, c.sidebarMutedForeground, maxLines = 1)
-                    inner()
-                }
-            },
-        )
-        if (query.isNotEmpty()) IconButton(Icons.X, "Clear search", tint = c.sidebarMutedForeground, size = 16.dp, box = 32.dp) { onQuery("") }
-        IconButton(Icons.SquarePen, "New thread", tint = c.sidebarMutedForeground, size = 16.dp, box = 32.dp, onClick = onNewThread)
+    Menu(open, onDismiss, minWidth = 240.dp, maxWidth = 300.dp) {
+        MenuItem("All projects", Icons.Folder, selected = scope == null) { onDismiss(); actions.scopeProject(null) }
+        for (g in groups) {
+            MenuItem(
+                g.label, selected = g.key == scope?.key,
+                leading = { Monogram(g.label, Modifier.padding(vertical = 1.dp)) },
+                trailing = if (spans) ({ Txt(machineBadge(g), CandyType.xxs, c.mutedForeground, maxLines = 1) }) else null,
+            ) { onDismiss(); actions.scopeProject(g.key) }
+        }
     }
 }
 
-/** Blocked and offline states under the header, with the action that fixes them. */
-@Composable
-private fun ConnectionAlert(state: ConnectionState, actions: SidebarActions) {
-    when (state) {
-        is ConnectionState.Blocked -> Alert(
-            state.message, NoticeTone.ERROR, Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            action = when (state.reason) { BlockReason.SIGN_IN -> "Sign in"; BlockReason.PAIR_AGAIN -> "Pair"; else -> "Retry" },
-        ) { actions.retry(state.reason) }
-        is ConnectionState.Offline -> Alert(state.message, NoticeTone.NEUTRAL, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), action = "Retry") { actions.retry(null) }
-        else -> Unit
-    }
-}
-
-@Composable
-private fun SidebarNote(text: String, action: String? = null, onAction: () -> Unit = {}) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Txt(text, CandyType.sm, Candy.colors.sidebarMutedForeground)
-        if (action != null) CButton(action, kind = ButtonKind.SECONDARY, size = ButtonSize.SM, onClick = onAction)
-    }
-}
+/** `ProjectEnvironmentBadge`, as text: how many machines have the project. */
+private fun machineBadge(g: SidebarProjectGroup): String = g.envIds.size.let { n -> if (n == 1) "1 machine" else "$n machines" }
 
 /**
- * A project row (LegacySidebar `SidebarProjectItem`): the chevron that turns as it opens, the
- * project's monogram, its title in `text-sm font-medium`, and New thread, which T3 shows on touch
- * screens without hover. A collapsed project shows the most urgent status among its threads.
- */
-@Composable
-private fun ProjectHeader(group: ProjectGroup, collapsed: Boolean, onToggle: () -> Unit, onNewThread: ((String) -> Unit)?) {
-    val c = Candy.colors
-    val project = group.project
-    val turn by animateFloatAsState(if (collapsed) 0f else 90f, Motion.fast(), label = "chevron")
-    val source = remember { MutableInteractionSource() }
-    val pressed by source.collectIsPressedAsState()
-    Row(
-        Modifier.fillMaxWidth().padding(top = 2.dp).height(40.dp).clip(RoundedCornerShape(Radius.md))
-            .background(if (pressed) c.sidebarRowHover.compositeOverSidebar(c) else Color.Transparent)
-            .combinedClickable(source, null, role = Role.Button, onClickLabel = if (collapsed) "Expand" else "Collapse", onClick = onToggle)
-            .semantics { stateDescription = if (collapsed) "Collapsed" else "Expanded" }
-            .padding(start = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.ChevronRight, c.mutedForeground.copy(alpha = 0.7f), 14.dp, Modifier.rotate(turn))
-        Spacer(Modifier.width(8.dp))
-        Monogram(project?.title ?: "Other")
-        Spacer(Modifier.width(8.dp))
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            Txt(project?.title ?: "Other", CandyType.smMedium, c.sidebarForeground.copy(alpha = 0.9f), maxLines = 1, modifier = Modifier.weight(1f, fill = false))
-            if (collapsed) {
-                hiddenStatus(group.threads)?.let { p -> threadStatus(p, false)?.let { Spacer(Modifier.width(8.dp)); StatusLabel(it, compact = true) } }
-            }
-        }
-        if (project != null && onNewThread != null) {
-            IconButton(Icons.SquarePen, "New thread in ${project.title}", tint = c.iconMuted, size = 15.dp, box = 32.dp) { onNewThread(project.id) }
-        }
-    }
-}
-
-/** On the light sidebar the hover token is lighter than the sidebar itself; pressing reads as a step darker instead. */
-private fun Color.compositeOverSidebar(c: CandyColors): Color = if (c.dark) this else c.sidebarControlSurface
-
-/**
- * A thread row (LegacySidebar `SidebarThreadRow`), inside T3's `SidebarMenuSub` guide line: status,
- * title in `text-sm`, the relative time in `text-3xs`. The open thread takes `bg-sidebar-row-active`
- * and `font-medium`; others read in `text-sidebar-muted-foreground/80`. A long press opens its menu.
+ * A card row (SidebarThreadRow `variant="card"`, 78px): the project monogram, pin and name with the
+ * status or time on the right; the title; then the branch, the machine when tagged, and the
+ * provider glyph. A row with nothing for the user recedes (`shouldRecedeSidebarThread`).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ThreadRow(
-    thread: ThreadSummary,
-    active: Boolean,
+private fun CardRow(info: RowInfo, now: Long, menuOpen: Boolean, onClick: () -> Unit, onLongClick: () -> Unit, menu: @Composable () -> Unit) {
+    val c = Candy.colors
+    val t = info.thread
+    val woke = t.isWoke(now)
+    val recede = SidebarStatus.recede(t.pill, t.unread, woke, info.active)
+    val top = SidebarStatus.top(t.pill, t.unread, woke)
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val fill = when {
+        info.active -> c.sidebarRowActive
+        pressed || menuOpen -> c.sidebarRowHover.compositeOverSidebar(c)
+        else -> Color.Transparent
+    }
+    val titleColor = when {
+        recede -> c.secondaryLabel
+        t.unread || woke || t.pill == StatusPill.INPUT -> c.foreground
+        t.pill == StatusPill.FAILED -> c.foreground.copy(alpha = 0.95f)
+        else -> c.foreground.copy(alpha = 0.9f)
+    }
+    Box(Modifier.padding(vertical = 1.dp)) {
+        Column(
+            Modifier.fillMaxWidth().height(78.dp).clip(RoundedCornerShape(Radius.md)).background(fill)
+                .graphicsLayer { alpha = if (recede && t.pill == StatusPill.WORKING) 0.7f else 1f }
+                .combinedClickable(source, null, role = Role.Button, onLongClickLabel = "Thread actions", onLongClick = onLongClick, onClick = onClick)
+                .semantics { stateDescription = listOfNotNull(top?.let(::topLabel), info.project).joinToString() }
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        ) {
+            Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Monogram(info.project)
+                if (t.section == 0) Icon(Icons.Pin, c.mutedForeground.copy(alpha = 0.65f), 12.dp, description = "Pinned")
+                Txt(info.project, CandyType.xs, c.secondaryLabel, maxLines = 1, modifier = Modifier.weight(1f), weight = if (recede) FontWeight.Normal else FontWeight.Medium)
+                if (top != null) TopStatusLabel(top, t, now) else TimeLabel(relativeTime(t.activityAt, now), c.secondaryLabel)
+            }
+            Spacer(Modifier.height(4.dp))
+            Txt(t.title, CandyType.sm, titleColor, maxLines = 1, weight = if (recede) FontWeight.Normal else FontWeight.Medium)
+            Spacer(Modifier.height(2.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val faint = c.mutedForeground.copy(alpha = 0.4f)
+                if (t.branch != null) {
+                    Icon(Icons.GitBranch, faint, 12.dp)
+                    Txt(t.branch.orEmpty(), CandyType.xs, faint, maxLines = 1, modifier = Modifier.weight(1f))
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                info.machine?.let { m ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Laptop, c.sidebarMutedForeground.copy(alpha = 0.7f), 12.dp)
+                        Txt(m, CandyType.xxs, c.sidebarMutedForeground.copy(alpha = 0.85f), maxLines = 1, modifier = Modifier.widthIn(max = 120.dp))
+                    }
+                }
+                if (info.driver != null) {
+                    val (glyph, tint) = providerIcon(info.driver)
+                    Icon(glyph, tint, 14.dp, Modifier.graphicsLayer { alpha = 0.6f })
+                }
+            }
+        }
+        menu()
+    }
+}
+
+private fun topLabel(top: TopStatus) = when (top) {
+    TopStatus.APPROVAL -> "Approval"
+    TopStatus.INPUT -> "Input"
+    TopStatus.WORKING -> "Working"
+    TopStatus.WAITING -> "Waiting"
+    TopStatus.FAILED -> "Failed"
+    TopStatus.LIMITED -> "Limited"
+    TopStatus.WOKE -> "Woke"
+    TopStatus.DONE -> "Done"
+}
+
+/** The card's status slot: T3's icon, label and, while working, how long; static, the minute clock moves it. */
+@Composable
+private fun TopStatusLabel(top: TopStatus, t: ThreadSummary, now: Long) {
+    val c = Candy.colors
+    val (icon, color) = when (top) {
+        TopStatus.WORKING -> Icons.CircleDashed to c.info
+        TopStatus.WAITING -> Icons.CircleDotDashed to c.mutedForeground
+        TopStatus.APPROVAL -> Icons.ShieldQuestion to c.warningForeground
+        TopStatus.INPUT -> Icons.MessageCircleQuestion to c.statusInput
+        TopStatus.LIMITED -> Icons.CircleAlert to c.warning
+        TopStatus.FAILED -> Icons.CircleAlert to c.error
+        TopStatus.WOKE -> Icons.AlarmClock to c.warning
+        TopStatus.DONE -> Icons.CircleCheck to c.success
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Icon(icon, color, 16.dp)
+        Txt(topLabel(top), CandyType.xsMedium, color, maxLines = 1)
+        if (top == TopStatus.WORKING && t.workingSince > 0 && now - t.workingSince >= 60_000) {
+            Txt(duration(now - t.workingSince), CandyType.xsMedium.merge(TextStyle(fontFeatureSettings = "tnum")), color, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun TimeLabel(text: String, color: Color) =
+    Txt(text, CandyType.xs.merge(TextStyle(fontFeatureSettings = "tnum")), color, maxLines = 1)
+
+/**
+ * A slim row (SidebarThreadRow `variant="slim"`) for the shelves and search results: the faded
+ * monogram, the title, the pin, and on the right the wake countdown, Woke, or the time. Search
+ * results add the project under the title.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SlimRow(
+    info: RowInfo,
+    section: SidebarSection,
     now: Long,
     menuOpen: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    showProject: Boolean = false,
     menu: @Composable () -> Unit,
 ) {
     val c = Candy.colors
+    val t = info.thread
+    val woke = t.isWoke(now)
+    val recede = SidebarStatus.recede(t.pill, t.unread, woke, info.active)
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
-    val status = threadStatus(thread.pill, thread.unread)
     val fill = when {
-        active -> c.sidebarRowActive
+        info.active -> c.sidebarRowActive
         pressed || menuOpen -> c.sidebarRowHover.compositeOverSidebar(c)
         else -> Color.Transparent
     }
-    SubTreeLine {
-        Box {
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 2.dp).height(36.dp).clip(RoundedCornerShape(Radius.md)).background(fill)
-                    .combinedClickable(source, null, role = Role.Button, onLongClickLabel = "Thread actions", onLongClick = onLongClick, onClick = onClick)
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (status != null) StatusLabel(status)
-                Txt(
-                    thread.title, CandyType.sm,
-                    if (active || thread.unread) c.sidebarForeground else c.sidebarMutedForeground.copy(alpha = 0.8f),
-                    maxLines = 1, modifier = Modifier.weight(1f),
-                    weight = if (active) FontWeight.Medium else FontWeight.Normal,
-                )
-                Txt(relativeTime(thread.activityAt, now), CandyType.xxs.merge(TextStyle(fontFeatureSettings = "tnum")), if (active) c.sidebarForeground else c.secondaryLabel, maxLines = 1)
-            }
-            menu()
-        }
+    val titleColor = when {
+        recede -> c.secondaryLabel.copy(alpha = 0.7f)
+        info.active || woke || t.pill == StatusPill.INPUT -> c.foreground
+        t.unread -> c.mutedForeground
+        else -> c.secondaryLabel.copy(alpha = 0.7f)
     }
-}
-
-/** `SidebarMenuSub`: `mx-3.5 border-l border-sidebar-border px-2.5`, the line that ties threads to their project. */
-@Composable
-private fun SubTreeLine(content: @Composable () -> Unit) {
-    val c = Candy.colors
-    Row(Modifier.fillMaxWidth().padding(start = 15.dp, end = 0.dp)) {
-        // Every row under the line is 40dp, so the line takes that height without measuring intrinsics.
-        Box(Modifier.width(1.dp).height(40.dp).background(c.sidebarBorder))
-        Box(Modifier.weight(1f).padding(start = 6.dp)) { content() }
-    }
-}
-
-@Composable
-private fun ShowMoreRow(open: Boolean, hidden: StatusPill?, onClick: () -> Unit) {
-    val c = Candy.colors
-    SubTreeLine {
+    Box(Modifier.padding(vertical = 1.dp)) {
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 2.dp).height(36.dp).clip(RoundedCornerShape(Radius.md))
-                .combinedClickable(role = Role.Button, onClick = onClick).padding(horizontal = 8.dp),
+            Modifier.fillMaxWidth().height(if (showProject) 48.dp else 40.dp).clip(RoundedCornerShape(Radius.md)).background(fill)
+                .combinedClickable(source, null, role = Role.Button, onLongClickLabel = "Thread actions", onLongClick = onLongClick, onClick = onClick)
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            hidden?.let { p -> threadStatus(p, false)?.let { StatusLabel(it, compact = true) } }
-            Txt(if (open) "Show less" else "Show more", CandyType.xs, c.sidebarMutedForeground, maxLines = 1)
+            Box(Modifier.graphicsLayer { alpha = if (info.active) 1f else 0.4f }) { Monogram(info.project) }
+            Column(Modifier.weight(1f)) {
+                Txt(t.title, CandyType.sm, titleColor, maxLines = 1)
+                if (showProject) {
+                    Txt(listOfNotNull(info.project, info.machine).joinToString(" · "), CandyType.xs, c.secondaryLabel, maxLines = 1)
+                }
+            }
+            if (t.section == 0) Icon(Icons.Pin, c.mutedForeground.copy(alpha = 0.65f), 12.dp, description = "Pinned")
+            when {
+                section == SidebarSection.SNOOZED && t.snoozedUntil > 0 -> TimeLabel(Snooze.wakeLabel(t.snoozedUntil, now), c.infoForeground)
+                woke -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(Icons.AlarmClock, c.warningForeground, 12.dp)
+                    Txt("Woke", CandyType.xsMedium, c.warningForeground, maxLines = 1)
+                }
+                else -> TimeLabel(relativeTime(if (section == SidebarSection.SETTLED) t.sortTime else t.activityAt, now), c.secondaryLabel)
+            }
+        }
+        menu()
+    }
+}
+
+/**
+ * `CollapsibleSectionHeader`: the label, a hairline to the edge and a chevron that points down
+ * when open. Snoozed takes the info tone.
+ */
+@Composable
+private fun ShelfHeader(label: String, expanded: Boolean, info: Boolean, onToggle: () -> Unit) {
+    val c = Candy.colors
+    val color = if (info) c.infoForeground else c.sidebarMutedForeground.copy(alpha = 0.6f)
+    val line = if (info) c.info.copy(alpha = 0.2f) else c.sidebarBorder.copy(alpha = 0.6f)
+    val turn by animateFloatAsState(if (expanded) 0f else 180f, Motion.fast(), label = "shelf")
+    Row(
+        Modifier.fillMaxWidth().padding(top = 4.dp).height(32.dp).clip(RoundedCornerShape(Radius.md))
+            .combinedClickable(role = Role.Button, onClickLabel = if (expanded) "Collapse" else "Expand", onClick = onToggle)
+            .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Txt(label, CandyType.xsMedium, color, maxLines = 1)
+        Box(Modifier.weight(1f).height(1.dp).background(line))
+        Icon(Icons.ChevronDown, color, 12.dp, Modifier.rotate(turn))
+    }
+}
+
+/** "Show 25 more" under an open Settled shelf. */
+@Composable
+private fun ShowMore(count: Int, onClick: () -> Unit) {
+    val c = Candy.colors
+    Row(
+        Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(Radius.md)).combinedClickable(role = Role.Button, onClick = onClick).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(Icons.Plus, c.sidebarMutedForeground.copy(alpha = 0.55f), 16.dp)
+        Txt("Show $count more", CandyType.sm, c.sidebarMutedForeground.copy(alpha = 0.55f), maxLines = 1)
+    }
+}
+
+@Composable
+private fun EmptyNote(text: String) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
+        Txt(text, CandyType.xs, Candy.colors.mutedForeground.copy(alpha = 0.6f))
+    }
+}
+
+/** The archived list behind the footer's archive button, newest first, as slim rows. */
+@Composable
+private fun ArchivedRows(
+    archived: ArchivedList,
+    now: Long,
+    openKey: String?,
+    menuFor: String?,
+    onMenu: (String) -> Unit,
+    actions: SidebarActions,
+    row: (ThreadSummary) -> RowInfo,
+    menu: @Composable (ThreadSummary) -> Unit,
+) {
+    val model = archived.model
+    when {
+        archived.error != null -> SidebarNote(archived.error, "Retry") { actions.toggleArchived(); actions.toggleArchived() }
+        model == null -> SidebarNote("Loading archived threads")
+        model.threadCount == 0 -> SidebarNote("No archived threads.")
+        else -> {
+            val threads = remember(model) { model.groups.flatMap { it.threads }.sortedByDescending { it.activityAt } }
+            Column {
+                Txt("Archived", CandyType.xsMedium, Candy.colors.sidebarMutedForeground, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp)) {
+                    items(threads, key = { it.key }, contentType = { "slim" }) { t ->
+                        SlimRow(row(t).copy(active = t.key == openKey), SidebarSection.ACTIVE, now, menuFor == t.key, { actions.openThread(t) }, { onMenu(t.key) }, showProject = true) { menu(t) }
+                    }
+                }
+            }
         }
     }
 }
 
-/** `SidebarFooter`: Settings, the archived list and the Timing screen. */
+/**
+ * A row's actions on long press: what T3 puts on hover (Settle, Snooze, Unpin, Woke) and in its
+ * context menu. Settle, snooze and pin show only where the machine's server supports them.
+ */
 @Composable
-private fun SidebarFooter(archivedOpen: Boolean, actions: SidebarActions) {
+private fun RowMenu(
+    t: ThreadSummary,
+    section: SidebarSection,
+    caps: MachineCaps,
+    now: Long,
+    open: Boolean,
+    onDismiss: () -> Unit,
+    actions: SidebarActions,
+    archivedOpen: Boolean,
+) {
+    var snoozing by remember(open) { mutableStateOf(false) }
+    fun run(action: (ThreadSummary) -> Unit) { onDismiss(); action(t) }
+    Menu(open, onDismiss, minWidth = 200.dp) {
+        when {
+            archivedOpen -> MenuItem("Unarchive", Icons.ArchiveX) { run(actions.unarchive) }
+            snoozing -> {
+                MenuLabel("Snooze until")
+                for (p in remember(now) { Snooze.presets(now) }) {
+                    MenuItem(p.label, trailing = { Txt(p.whenLabel, CandyType.sm, Candy.colors.mutedForeground, maxLines = 1) }) { onDismiss(); actions.snooze(t, p.untilMs) }
+                }
+            }
+            else -> {
+                if (t.isWoke(now)) MenuItem("Dismiss Woke", Icons.AlarmClockOff) { run(actions.acknowledgeWoke) }
+                if (caps.pin && section != SidebarSection.SNOOZED && section != SidebarSection.SETTLED) {
+                    if (t.section == 0) MenuItem("Unpin", Icons.PinOff) { run(actions.unpin) } else MenuItem("Pin", Icons.Pin) { run(actions.pin) }
+                }
+                if (caps.snooze) {
+                    if (section == SidebarSection.SNOOZED) MenuItem("Wake now", Icons.AlarmClockOff) { run(actions.unsnooze) }
+                    else if (Snooze.canSnooze(t)) MenuItem("Snooze", Icons.AlarmClock) { snoozing = true }
+                }
+                if (caps.settle) {
+                    if (section == SidebarSection.SETTLED) MenuItem("Un-settle", Icons.Undo2) { run(actions.unsettle) }
+                    else MenuItem("Settle", Icons.Check) { run(actions.settle) }
+                }
+                MenuSeparator()
+                MenuItem("Rename thread", Icons.Pencil) { run(actions.rename) }
+                if (t.unread || t.pill == StatusPill.READY) {
+                    MenuItem(if (t.unread) "Mark read" else "Mark unread", if (t.unread) Icons.Eye else Icons.EyeOff) { run(actions.toggleRead) }
+                }
+                MenuSeparator()
+                MenuItem("Archive", Icons.Archive, enabled = t.pill != StatusPill.WORKING) { run(actions.archive) }
+            }
+        }
+    }
+}
+
+/**
+ * T3's "New thread in" palette as a sheet: every project group, the preferred one first, with the
+ * machines it is on. A project on several machines then asks which.
+ */
+@Composable
+fun BoxScope.NewThreadSheet(
+    groups: List<SidebarProjectGroup>?,
+    machineChoice: SidebarProjectGroup?,
+    machines: Map<String, String>,
+    onDismiss: () -> Unit,
+    onGroup: (SidebarProjectGroup) -> Unit,
+    onStart: (envId: String, projectId: String) -> Unit,
+) {
     val c = Candy.colors
-    Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars)) {
-        Divider(color = c.sidebarBorder)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            val source = remember { MutableInteractionSource() }
-            val pressed by source.collectIsPressedAsState()
-            Row(
-                Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(Radius.md)).background(if (pressed) c.sidebarRowHover.compositeOverSidebar(c) else Color.Transparent)
-                    .combinedClickable(source, null, role = Role.Button, onClick = actions.settings).padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(Icons.Settings, c.sidebarMutedForeground, 16.dp)
-                Txt("Settings", CandyType.smMedium, c.sidebarMutedForeground.copy(alpha = 0.9f))
+    if (machineChoice != null) {
+        Sheet(onDismiss, "New thread in ${machineChoice.label}", description = "This project is on more than one machine. Pick where the thread runs.") {
+            for (p in machineChoice.members) {
+                ListRow(machines[p.envId] ?: p.envId, icon = Icons.Laptop, detail = p.workspaceRoot) { onStart(p.envId, p.id) }
             }
-            Box(Modifier.clip(RoundedCornerShape(Radius.md)).background(if (archivedOpen) c.sidebarRowActive else Color.Transparent)) {
-                IconButton(Icons.Archive, if (archivedOpen) "Show active threads" else "Show archived threads", tint = if (archivedOpen) c.sidebarForeground else c.sidebarMutedForeground, size = 16.dp, box = 36.dp, onClick = actions.toggleArchived)
+        }
+    } else if (groups != null) {
+        Sheet(onDismiss, "New thread in") {
+            for (g in groups) {
+                ListRow(
+                    g.label,
+                    detail = if (g.envIds.size > 1 || machines.size > 1) g.envIds.mapNotNull { machines[it] }.joinToString(" · ") else null,
+                    trailing = { Icon(Icons.ChevronRight, c.mutedForeground, 16.dp) },
+                ) { onGroup(g) }
             }
-            IconButton(Icons.Activity, "Timing", tint = c.sidebarMutedForeground, size = 16.dp, box = 36.dp, onClick = actions.timing)
         }
     }
 }

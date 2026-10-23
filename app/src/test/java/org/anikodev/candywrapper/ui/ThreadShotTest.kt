@@ -11,25 +11,32 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = PHONE)
 class ThreadShotTest {
-    @Composable
-    private fun Thread(
-        state: ThreadSession.State = ThreadFixtures.state,
-        bottom: @Composable () -> Unit = { ThreadComposer() },
-    ) {
-        ThreadView(
-            title = state.title!!, project = "CandyWrapper-Android", subtitle = null, subtitleError = false,
-            state = state, host = ThreadFixtures.host(), workingSince = Fixtures.NOW - 4 * 60_000, now = Fixtures.NOW, working = false,
-            onLoadOlder = {},
-        ) { bottom() }
+    companion object {
+        /** The sample thread with its composer, shared with the sidebar's tablet shots. */
+        @Composable
+        fun ThreadScreenFixture(
+            state: ThreadSession.State = ThreadFixtures.state,
+            bottom: @Composable () -> Unit = { ThreadComposer() },
+        ) {
+            ThreadView(
+                title = state.title!!, project = "CandyWrapper-Android", subtitle = null, subtitleError = false,
+                state = state, host = ThreadFixtures.host(), workingSince = Fixtures.NOW - 4 * 60_000, now = Fixtures.NOW, working = false,
+                onLoadOlder = {},
+            ) { bottom() }
+        }
+
+        /** Plan mode is off by default, so the composer shows no Plan toggle. */
+        @Composable
+        fun ThreadComposer(text: String = "", locked: String? = null, running: Boolean = false, tray: Boolean = false) = Composer(
+            text = text, onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
+            running = running, canStop = running, files = emptyList(), busy = null, error = null, connected = true,
+            onModel = {}, onRuntimeMode = {}, onTogglePlan = null, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
+            onStop = {}, onDismissError = {}, locked = locked, trayAbove = tray,
+        )
     }
 
     @Composable
-    private fun ThreadComposer(text: String = "", locked: String? = null, running: Boolean = false, tray: Boolean = false) = Composer(
-        text = text, onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
-        running = running, canStop = running, files = emptyList(), busy = null, error = null, connected = true,
-        onModel = {}, onRuntimeMode = {}, onTogglePlan = {}, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
-        onStop = {}, onDismissError = {}, locked = locked, trayAbove = tray,
-    )
+    private fun Thread(state: ThreadSession.State = ThreadFixtures.state, bottom: @Composable () -> Unit = { ThreadComposer() }) = ThreadScreenFixture(state, bottom)
 
     private fun thread(dark: Boolean) = shot("thread-phone", dark) { Thread() }
     @Test fun threadLight() = thread(false)
@@ -66,18 +73,32 @@ class ThreadShotTest {
         AppShell(
             DrawerState(open = true),
             sidebar = {
-                SidebarPanel(Fixtures.environments[0], Fixtures.environments, Fixtures.model, "t1", Fixtures.NOW, SidebarActions())
+                SidebarPanel(Fixtures.environments[0], Fixtures.environments, Fixtures.data, "e1:t1", Fixtures.NOW, SidebarActions())
             },
         ) { Thread() }
     }
     @Test fun drawerLight() = drawer(false)
+
+    /** Settings > Plan mode on brings the Plan toggle back to the composer. */
+    private fun planMode(dark: Boolean) = shot("composer-plan-mode-phone", dark) {
+        Thread {
+            Composer(
+                text = "", onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "plan"), server = ThreadFixtures.server,
+                running = false, canStop = false, files = emptyList(), busy = null, error = null, connected = true,
+                onModel = {}, onRuntimeMode = {}, onTogglePlan = {}, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
+                onStop = {}, onDismissError = {},
+            )
+        }
+    }
+    @Test fun planModeLight() = planMode(false)
+    @Test fun planModeDark() = planMode(true)
     @Test fun drawerDark() = drawer(true)
 
     private fun tablet(dark: Boolean) = shot("thread-tablet", dark) {
         AppShell(
             DrawerState(open = false),
             sidebar = {
-                SidebarPanel(Fixtures.environments[0], Fixtures.environments, Fixtures.model, "t1", Fixtures.NOW, SidebarActions())
+                SidebarPanel(Fixtures.environments[0], Fixtures.environments, Fixtures.data, "e1:t1", Fixtures.NOW, SidebarActions())
             },
         ) { Thread() }
     }

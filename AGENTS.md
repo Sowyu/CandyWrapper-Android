@@ -4,8 +4,8 @@ A native Kotlin and Compose client for T3 Code. The user runs T3 Code on a Mac a
 
 ## Layout
 
-- `core` is a pure-Kotlin JVM module with no Android dependency: RPC framing and connection (`rpc`), HTTP clients (`http`), pairing and environment HTTP (`auth`), Clerk, relay and DPoP (`connect`), reducers, sessions and command encoders (`sync`), models (`model`), Markdown and code highlighting (`markdown`), diff parsing and tool output (`diff`), cache and secret interfaces (`store`) and timing marks (`timing`).
-- `app` is the Android app: boot and wiring (`AppGraph`, `CandyApp`, `MainActivity`), SQLite and Keystore storage (`data`), and Compose screens (`ui`). Screens draw with the kit in `ui/Kit.kt`, `ui/Theme.kt` and `ui/Icons.kt`. There is no Material dependency. `ui/Shell.kt` and `ui/Sidebar.kt` are the frame and T3's sidebar; [docs/design.md](docs/design.md) says where each value comes from.
+- `core` is a pure-Kotlin JVM module with no Android dependency: RPC framing and connection (`rpc`), HTTP clients (`http`), pairing and environment HTTP (`auth`), Clerk, relay and DPoP (`connect`), reducers, sessions and command encoders (`sync`), models (`model`), the sidebar's sections, project groups and snooze rules (`sidebar`), Markdown and code highlighting (`markdown`), diff parsing and tool output (`diff`), cache and secret interfaces (`store`) and timing marks (`timing`).
+- `app` is the Android app: boot and wiring (`AppGraph`, `CandyApp`, `MainActivity`), SQLite and Keystore storage (`data`), and Compose screens (`ui`). Screens draw with the kit in `ui/Kit.kt`, `ui/Theme.kt` and `ui/Icons.kt`. There is no Material dependency. `ui/Shell.kt` is the frame, `ui/Sidebar.kt` T3's sidebar, `ui/LegacySidebar.kt` the per-project tree behind Settings > Legacy sidebar and `ui/SidebarChrome.kt` what both share; [docs/design.md](docs/design.md) says where each value comes from.
 - `core/src/test/resources/transcripts` holds recorded traffic from a real `t3 serve`, copied from CandyWrapper's fixtures. Tests replay it.
 
 ## Blueprint
@@ -16,7 +16,7 @@ The macOS app at `~/CandyWrapper` is the reference. Its `docs/protocol.md` is th
 
 - `./gradlew :core:test` runs every test. It takes about 10 seconds.
 - `./gradlew :app:assembleDebug` and `./gradlew :app:assembleRelease` build the APKs. Set `ANDROID_HOME=$HOME/Android/Sdk`.
-- `./gradlew :app:recordRoborazziDebug` rewrites the screenshots in `app/src/test/snapshots`; `verifyRoborazziDebug` compares against them. Screens take plain state (`SidebarPanel`, `ThreadView`, `Composer`) so the tests can draw them without a server.
+- `./gradlew :app:recordRoborazziDebug` rewrites the screenshots in `app/src/test/snapshots`; `verifyRoborazziDebug` compares against them. Screens take plain state (`SidebarPanel`, `LegacySidebarPanel`, `ThreadView`, `Composer`) so the tests can draw them without a server.
 - The system JDK on the dev machine has no `javac`; Gradle uses a JDK 17 toolchain.
 
 ## Rules

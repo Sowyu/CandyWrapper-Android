@@ -191,20 +191,7 @@ class SidebarLogicTest {
         assertEquals("2d", Snooze.wakeLabel(now + 25 * 3_600_000L, now))
     }
 
-    // shouldNavigateAfterThreadPark, planForwardNavigation
-
-    @Test
-    fun navigationAfterParkingAThread() {
-        val settled = t("thread", """"settledOverride":"settled"""")
-        val snoozed = t("thread", """"snoozedUntil":"2099-01-01T00:00:00.000Z"""")
-        val blocked = t("thread", """"snoozedUntil":"2099-01-01T00:00:00.000Z","latestRunId":"r","status":"running","pendingRuntimeRequest":{"kind":"command"}""")
-        assertTrue(SidebarModel.shouldNavigateAfterPark("local:thread", "local:thread", settling = true, settled, now))
-        assertFalse(SidebarModel.shouldNavigateAfterPark("local:thread", "local:thread", settling = true, t("thread"), now))
-        assertFalse(SidebarModel.shouldNavigateAfterPark("local:thread", "local:other", settling = true, settled, now))
-        assertTrue(SidebarModel.shouldNavigateAfterPark("local:thread", "local:thread", settling = false, snoozed, now))
-        assertFalse(SidebarModel.shouldNavigateAfterPark("local:thread", "local:thread", settling = false, t("thread"), now))
-        assertFalse(SidebarModel.shouldNavigateAfterPark("local:thread", "local:thread", settling = false, blocked, now))
-    }
+    // planForwardNavigation
 
     @Test
     fun parkingMovesToTheNextCardWrappingRound() {
