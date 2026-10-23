@@ -68,7 +68,9 @@ class ThreadProjection(val threadId: String) {
     }
 
     fun restore(cached: CachedThread) {
-        sequence = cached.sequence
+        // A cache from before the thread settings were kept resubscribes without a cursor, so a
+        // snapshot fills in the model, modes, queue and requests instead of showing defaults.
+        sequence = if (cached.meta == null) 0 else cached.sequence
         title = cached.title
         hasMoreHistory = cached.hasMoreHistory
         historyCursor = cached.historyCursor

@@ -204,6 +204,9 @@ class ComposerTest {
         assertTrue(p.prependHistory("c1", page))
         assertEquals(listOf("first", "third"), p.rows().map { it.text })
         assertEquals("c0", p.historyCursor)
+        // The cache keeps the settings; a cache without them asks for a snapshot.
+        assertEquals(5, ThreadProjection("t").apply { restore(p.toCache()) }.sequence)
+        assertEquals(0, ThreadProjection("t").apply { restore(p.toCache().copy(meta = null)) }.sequence)
         assertTrue(p.hasMoreHistory)
         assertTrue(p.prependHistory("c0", json("""{"items":[],"nextCursor":null,"hasMoreHistory":false}""")))
         assertFalse(p.hasMoreHistory)
