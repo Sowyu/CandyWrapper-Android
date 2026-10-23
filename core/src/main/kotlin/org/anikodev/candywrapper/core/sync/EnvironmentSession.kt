@@ -20,6 +20,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -29,11 +30,19 @@ import org.anikodev.candywrapper.core.auth.IncompatibleEnvironment
 import org.anikodev.candywrapper.core.connect.RelayError
 import org.anikodev.candywrapper.core.http.Http
 import org.anikodev.candywrapper.core.http.HttpStatusError
+import org.anikodev.candywrapper.core.http.await
 import org.anikodev.candywrapper.core.json.arr
+import org.anikodev.candywrapper.core.json.long
+import org.anikodev.candywrapper.core.http.json
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.anikodev.candywrapper.core.json.str
 import org.anikodev.candywrapper.core.model.DirectRoute
 import org.anikodev.candywrapper.core.model.EnvironmentKind
 import org.anikodev.candywrapper.core.model.SavedEnvironment
+import org.anikodev.candywrapper.core.model.ServerInfo
 import org.anikodev.candywrapper.core.model.ThreadListModel
 import org.anikodev.candywrapper.core.rpc.OkHttpRpcSocket
 import org.anikodev.candywrapper.core.rpc.RpcConnection
@@ -45,6 +54,9 @@ import org.anikodev.candywrapper.core.store.SecretStore
 import org.anikodev.candywrapper.core.store.getJson
 import org.anikodev.candywrapper.core.store.putJson
 import org.anikodev.candywrapper.core.timing.Timeline
+
+/** A command or request needs the socket, and it is not open. */
+class NotConnected : IOException("Not connected to the computer. Try again when it is back.")
 
 sealed interface ConnectionState {
     data object Idle : ConnectionState
@@ -95,6 +107,10 @@ class EnvironmentSession(
     private val _threads = MutableStateFlow(shell.model())
     val threads: StateFlow<ThreadListModel> = _threads
 
+    private val _server = MutableStateFlow(ServerInfo())
+    /** Providers, models and new-thread defaults from the last `server.getConfig`. */
+    val server: StateFlow<ServerInfo> = _server
+
     private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
     @Volatile private var connection: RpcConnection? = null
     @Volatile private var route: Route? = null
@@ -136,7 +152,7 @@ class EnvironmentSession(
     }
 
     fun thread(threadId: String): ThreadSession = synchronized(threadSessions) {
-        threadSessions.getOrPut(threadId) { ThreadSession(id, threadId, "$trace.thread.${threadId.take(8)}", cache, scope, io, ::liveConnection) }.also {
+        threadSessions.getOrPut(threadId) { ThreadSession(this, threadId, "$trace.thread.${threadId.take(8)}", cache, scope, io, ::liveConnection) }.also {
             // Keep the threads in use plus the last few closed ones in memory for instant reopen.
             if (threadSessions.size > RETAINED_THREADS) {
                 threadSessions.entries.filter { !it.value.held && it.key != threadId }
@@ -147,6 +163,61 @@ class EnvironmentSession(
 
     /** The socket if it is open, for thread sessions that start after it did. */
     fun liveConnection(): RpcConnection? = connection?.takeUnless { it.isClosed }
+
+    // Commands and requests
+
+    /** A unary RPC on the open socket. Throws [NotConnected] while offline. */
+    suspend fun request(tag: String, payload: JsonObject = RpcConnection.EMPTY, timeoutMs: Long = 15_000): JsonElement? {
+        val conn = liveConnection() ?: throw NotConnected()
+        return conn.request(tag, payload, timeoutMs)
+    }
+
+    /**
+     * Sends one `orchestration.dispatchCommand` and returns the sequence of its last event
+     * (protocol.md 7.2). Failures carry the server's user-facing message.
+     */
+    suspend fun dispatch(command: JsonObject): Long {
+        val start = Timeline.nowMs()
+        val result = request("orchestration.dispatchCommand", command) as? JsonObject
+        Timeline.span("$trace.command.${command.str("type")}", start)
+        return result?.long("sequence") ?: 0
+    }
+
+    /** An authorized GET on the route the socket uses, with the orchestration protocol header (protocol.md 5.1). */
+    suspend fun getJson(path: String, query: Map<String, String>): JsonObject {
+        val env = _env.value
+        val base = route?.httpBase ?: env.httpBase
+        val url = base.toHttpUrl().newBuilder().encodedPath(path).query(null)
+            .apply { query.forEach { (k, v) -> addQueryParameter(k, v) } }.build()
+        val auth = credentials.authorize(env, null, Tracer("$trace.http"))
+        val request = Request.Builder().url(url).header("Accept", "application/json")
+            .header("x-t3-orchestration-protocol", EnvironmentApi.PROTOCOL.toString())
+            .apply { auth.headers("GET", url).forEach { (k, v) -> header(k, v) } }
+            .build()
+        return Http.environment.json(request)
+    }
+
+    /**
+     * Uploads an attachment (protocol.md 5.3): a signed upload URL over RPC, then the bytes. The
+     * signed path is the credential, so the POST carries no auth header.
+     */
+    suspend fun upload(name: String, mimeType: String, bytes: ByteArray): UploadedAttachment {
+        val type = if (mimeType.startsWith("image/")) "image" else "file"
+        val minted = request("attachments.createUploadUrl", buildJsonObject {
+            put("type", type)
+            put("name", name.take(255))
+            put("mimeType", mimeType)
+            put("sizeBytes", bytes.size)
+        }) as? JsonObject ?: throw IOException("The computer did not return an upload address.")
+        val id = minted.str("attachmentId") ?: throw IOException("The upload answer has no attachmentId.")
+        val relative = minted.str("relativeUrl") ?: throw IOException("The upload answer has no relativeUrl.")
+        val base = (route?.httpBase ?: _env.value.httpBase).toHttpUrl()
+        val url = base.resolve(relative) ?: throw IOException("Bad upload address.")
+        val response = Http.environment.newCall(Request.Builder().url(url).post(bytes.toRequestBody(mimeType.toMediaTypeOrNull())).build())
+            .await()
+        response.use { if (!it.isSuccessful) throw HttpStatusError(it.code, null, null, null, null, null, url.encodedPath) }
+        return UploadedAttachment(id, name, mimeType, bytes.size.toLong())
+    }
 
     // Supervision
 
@@ -292,7 +363,9 @@ class EnvironmentSession(
         synchronized(threadSessions) { threadSessions.values.toList() }.forEach { it.attach(conn) }
         val config = conn.call("server.getConfig")
         scope.launch(io) {
-            runCatching { learnRoutes(config.await() as? JsonObject) }
+            val value = runCatching { config.await() as? JsonObject }.getOrNull() ?: return@launch
+            runCatching { learnRoutes(value) }
+            runCatching { _server.value = ServerInfo.parse(value) }
         }
         startPings(conn)
     }

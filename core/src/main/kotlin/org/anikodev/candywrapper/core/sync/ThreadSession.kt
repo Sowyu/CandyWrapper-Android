@@ -17,6 +17,10 @@ import org.anikodev.candywrapper.core.model.RowKind
 import org.anikodev.candywrapper.core.model.TurnRow
 import org.anikodev.candywrapper.core.rpc.RpcConnection
 import org.anikodev.candywrapper.core.store.LocalCache
+import org.anikodev.candywrapper.core.store.ThreadMeta
+import kotlinx.serialization.json.JsonElement
+import org.anikodev.candywrapper.core.json.obj
+import org.anikodev.candywrapper.core.json.str
 import org.anikodev.candywrapper.core.timing.Timeline
 
 /** What the thread view draws, one entry per list item. */
@@ -45,7 +49,7 @@ data class ToolGroup(override val key: String, val rows: List<TimelineRow>) : Ti
  * they stop; the subscription lives only while someone holds it.
  */
 class ThreadSession internal constructor(
-    val envId: String,
+    private val environment: EnvironmentSession,
     val threadId: String,
     private val traceName: String,
     private val cache: LocalCache,
@@ -56,7 +60,25 @@ class ThreadSession internal constructor(
 ) {
     enum class Phase { LOADING, CACHED, SYNCING, LIVE, DELETED }
 
-    data class State(val items: List<TimelineItem> = emptyList(), val title: String? = null, val phase: Phase = Phase.LOADING)
+    data class State(
+        val items: List<TimelineItem> = emptyList(),
+        val title: String? = null,
+        val phase: Phase = Phase.LOADING,
+        val meta: ThreadMeta = ThreadMeta(),
+        /** The run Stop interrupts, null when nothing can be stopped. */
+        val stoppableRunId: String? = null,
+        /** True while a run is active, so a new message queues or steers. */
+        val running: Boolean = false,
+        val queued: List<QueuedMessage> = emptyList(),
+        val pending: List<PendingRequest> = emptyList(),
+        val hasMoreHistory: Boolean = false,
+        val loadingOlder: Boolean = false,
+        val olderError: String? = null,
+        /** True when the thread has no user message yet, so the first one seeds the title. */
+        val empty: Boolean = true,
+    )
+
+    val envId: String get() = environment.id
 
     private val lock = Any()
     private val projection = ThreadProjection(threadId)
@@ -155,7 +177,7 @@ class ThreadSession internal constructor(
         synchronized(lock) {
             failures = 0
             for (v in values) when (projection.apply(v)) {
-                ThreadProjection.Change.ROWS -> changed = true
+                ThreadProjection.Change.ROWS, ThreadProjection.Change.META -> changed = true
                 ThreadProjection.Change.LIVE -> live = true
                 ThreadProjection.Change.NONE -> Unit
             }
@@ -202,9 +224,132 @@ class ThreadSession internal constructor(
                 r
             }
             rendered = nextRendered
-            State(group(out), projection.title, if (projection.deleted) Phase.DELETED else phase)
+            val prev = _state.value
+            State(
+                items = group(out),
+                title = projection.title,
+                phase = if (projection.deleted) Phase.DELETED else phase,
+                meta = projection.meta,
+                stoppableRunId = projection.interruptibleRunId(),
+                running = projection.activeRunId() != null,
+                queued = projection.queued().let { if (it == prev.queued) prev.queued else it },
+                pending = projection.pending().let { if (it == prev.pending) prev.pending else it },
+                hasMoreHistory = projection.hasMoreHistory,
+                loadingOlder = prev.loadingOlder,
+                olderError = prev.olderError,
+                empty = rows.none { it.type == "user_message" },
+            )
         }
         _state.value = next
+    }
+
+    private fun currentPhase(): Phase = _state.value.phase.let { if (it == Phase.LOADING) Phase.CACHED else it }
+
+    // Actions. Each throws with a message the composer shows; nothing retries on its own (protocol.md 8.8).
+
+    /** Sends a message: starts a run, or queues or steers behind the active one. */
+    suspend fun send(text: String, attachments: List<UploadedAttachment> = emptyList(), delivery: Delivery = Delivery.AUTO) {
+        val s = _state.value
+        val command = Commands.sendMessage(
+            threadId, text, attachments,
+            activeRunId = synchronized(lock) { projection.activeRunId() },
+            delivery = delivery,
+            serverResolvesDelivery = environment.server.value.serverResolvesDelivery,
+            titleSeed = if (s.empty) text.lineSequence().firstOrNull { it.isNotBlank() }?.take(80) else null,
+        )
+        environment.dispatch(command)
+    }
+
+    suspend fun stop() {
+        val runId = synchronized(lock) { projection.interruptibleRunId() } ?: return
+        environment.dispatch(Commands.interrupt(threadId, runId))
+    }
+
+    suspend fun cancelQueued(runId: String) = environment.dispatch(Commands.cancelQueued(threadId, runId))
+
+    suspend fun steerQueued(runId: String) {
+        val target = synchronized(lock) { projection.activeRunId() } ?: return
+        environment.dispatch(Commands.promoteToSteer(threadId, runId, target))
+    }
+
+    suspend fun approve(requestId: String, decision: String) = environment.dispatch(Commands.approve(threadId, requestId, decision))
+
+    suspend fun answer(requestId: String, answers: Map<String, Any>) = environment.dispatch(Commands.answer(threadId, requestId, answers))
+
+    suspend fun dismissQuestion(requestId: String) = environment.dispatch(Commands.dismissQuestion(threadId, requestId))
+
+    suspend fun setRuntimeMode(mode: String) = environment.dispatch(Commands.setRuntimeMode(threadId, mode))
+
+    suspend fun setInteractionMode(mode: String) = environment.dispatch(Commands.setInteractionMode(threadId, mode))
+
+    suspend fun setModel(model: org.anikodev.candywrapper.core.model.ModelSelection) = environment.dispatch(
+        Commands.setModel(threadId, _state.value.meta.providerInstanceId ?: _state.value.meta.model?.instanceId, model,
+            environment.server.value.serverResolvesDelivery),
+    )
+
+    suspend fun rename(title: String) = environment.dispatch(Commands.rename(threadId, title))
+
+    /** Loads the next older page of the timeline (protocol.md 7.7 History paging). */
+    suspend fun loadOlder() {
+        val cursor = synchronized(lock) {
+            if (_state.value.loadingOlder) return
+            projection.historyCursor
+        } ?: return
+        _state.value = _state.value.copy(loadingOlder = true, olderError = null)
+        val start = Timeline.nowMs()
+        try {
+            val page = environment.getJson("/api/orchestration/threads/$threadId/history", mapOf("cursor" to cursor))
+            val applied = synchronized(lock) { projection.prependHistory(cursor, page) }
+            Timeline.span("$traceName.history.page", start, if (applied) "${page["items"]?.let { (it as? kotlinx.serialization.json.JsonArray)?.size }} items" else "stale")
+            _state.value = _state.value.copy(loadingOlder = false)
+            publish(currentPhase())
+            save(0)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            _state.value = _state.value.copy(loadingOlder = false)
+            throw e
+        } catch (e: Exception) {
+            _state.value = _state.value.copy(loadingOlder = false, olderError = EnvironmentSession.describe(e))
+        }
+    }
+
+    /** The full item behind a row whose output or diff the stream left out (`orchestration.getTurnItem`, protocol.md 7.5). */
+    suspend fun fullItem(itemId: String): JsonObject? =
+        (environment.request("orchestration.getTurnItem", buildJsonObject {
+            put("threadId", threadId)
+            put("itemId", itemId)
+        }) as? JsonObject)?.obj("item")
+
+    /**
+     * The unified diff of the run a checkpoint closed (protocol.md 8.4): `getFullThreadDiff` for the
+     * first run, else `getTurnDiff` from the run before.
+     */
+    suspend fun checkpointDiff(checkpointId: String): String? {
+        val turn = synchronized(lock) { projection.checkpointTurn(checkpointId) } ?: return null
+        val result: JsonElement? = if (turn <= 1) {
+            environment.request("orchestration.getFullThreadDiff", buildJsonObject {
+                put("threadId", threadId); put("toTurnCount", turn); put("ignoreWhitespace", false)
+            }, timeoutMs = 30_000)
+        } else {
+            environment.request("orchestration.getTurnDiff", buildJsonObject {
+                put("threadId", threadId); put("fromTurnCount", turn - 1); put("toTurnCount", turn); put("ignoreWhitespace", false)
+            }, timeoutMs = 30_000)
+        }
+        return (result as? JsonObject)?.str("diff")
+    }
+
+    /** Drops the stream and subscribes again from the cursor: pull to refresh. */
+    fun resubscribe() {
+        val conn = environment.liveConnection()
+        if (conn == null) {
+            environment.wake()
+            return
+        }
+        synchronized(lock) {
+            subscription?.cancel()
+            subscription = null
+            subscribedOn = null
+        }
+        attach(conn)
     }
 
     /** Folds runs of two or more tool rows into a [ToolGroup] keyed by its first row. */

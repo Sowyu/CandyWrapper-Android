@@ -40,6 +40,18 @@ data class TurnRow(
     val inputIntent: String? = null,
     /** `local` for this thread's own rows, else `inherited` or `synthetic` from a fork source. */
     val visibility: String = "local",
+    /** The `RuntimeRequestId` of an approval or question row, echoed exactly when answering. */
+    val requestId: String? = null,
+    /** An approval's buttons, when the server lists them. */
+    val approvalOptions: List<ApprovalChoice>? = null,
+    /** A question row's questions. */
+    val questions: List<Question>? = null,
+    /** A checkpoint row's id, the key for its run's diff. */
+    val checkpointId: String? = null,
+    /** When the item finished, or last changed while running. Epoch ms, 0 when unknown. */
+    val atMs: Long = 0,
+    /** Images and files attached to a user message. */
+    val attachmentCount: Int = 0,
 ) {
     val kind: RowKind
         get() = when (type) {
@@ -68,6 +80,8 @@ data class TurnRow(
             var detail: String? = null
             var body: String? = null
             var failed = o.str("status") == "failed"
+            var approvalOptions: List<ApprovalChoice>? = null
+            var questions: List<Question>? = null
             var label: String = title ?: TYPE_LABELS[type] ?: type.replace('_', ' ').replaceFirstChar { it.uppercase() }
             when (type) {
                 "user_message", "assistant_message", "reasoning" -> text = o.str("text")
@@ -97,8 +111,16 @@ data class TurnRow(
                 }
                 "approval_request" -> {
                     detail = listOfNotNull(o.str("requestKind"), o.str("prompt")).joinToString(": ")
+                    text = o.str("prompt")
+                    approvalOptions = o.arr("options")?.mapNotNull { e ->
+                        val c = e as? JsonObject ?: return@mapNotNull null
+                        ApprovalChoice(c.str("decision") ?: return@mapNotNull null, c.str("label") ?: c.str("decision")!!, c.str("warning"))
+                    }
                 }
-                "user_input_request" -> detail = o.arr("questions")?.firstOrNull()?.let { (it as? JsonObject)?.str("question") }
+                "user_input_request" -> {
+                    questions = o.arr("questions").orEmpty().mapNotNull { (it as? JsonObject)?.let(Question::from) }
+                    detail = questions.firstOrNull()?.question
+                }
                 "checkpoint" -> {
                     val files = o.arr("files").orEmpty().mapNotNull { it as? JsonObject }
                     text = when (files.size) { 0 -> "No files changed"; 1 -> "1 file changed"; else -> "${files.size} files changed" }
@@ -131,6 +153,12 @@ data class TurnRow(
                 failed = failed,
                 inputIntent = o.str("inputIntent"),
                 visibility = visibility,
+                requestId = o.str("requestId"),
+                approvalOptions = approvalOptions,
+                questions = questions,
+                checkpointId = o.str("checkpointId"),
+                atMs = ThreadSummary.time(o.str("completedAt") ?: o.str("updatedAt") ?: o.str("startedAt")),
+                attachmentCount = o.arr("attachments")?.size ?: 0,
             )
         }
 
@@ -156,6 +184,43 @@ data class TurnRow(
             "subagent" to "Subagent",
             "error" to "Error",
             "secret_request" to "Secret request",
+        )
+    }
+}
+
+/** One approval button: the decision to send and its label (`approval_request.options`). */
+@Serializable
+data class ApprovalChoice(val decision: String, val label: String, val warning: String? = null)
+
+@Serializable
+data class QuestionOption(val label: String, val description: String = "", val value: String? = null) {
+    /** What an answer carries for this option: its `value`, else its label (threadActivity.ts:364-377). */
+    val answerValue: String get() = value ?: label.trim()
+}
+
+/** `OrchestrationV2UserInputQuestion` (contracts `orchestrationV2.ts:1242-1258`). */
+@Serializable
+data class Question(
+    val id: String,
+    val header: String,
+    val question: String,
+    val options: List<QuestionOption> = emptyList(),
+    val multiSelect: Boolean = false,
+    val allowCustomAnswer: Boolean = true,
+    val initialAnswer: String? = null,
+) {
+    companion object {
+        fun from(o: JsonObject): Question? = Question(
+            id = o.str("id") ?: return null,
+            header = o.str("header") ?: "",
+            question = o.str("question") ?: return null,
+            options = o.arr("options").orEmpty().mapNotNull { e ->
+                val c = e as? JsonObject ?: return@mapNotNull null
+                QuestionOption(c.str("label") ?: return@mapNotNull null, c.str("description").orEmpty(), c.str("value"))
+            },
+            multiSelect = o.bool("multiSelect") == true,
+            allowCustomAnswer = o.bool("allowCustomAnswer") != false,
+            initialAnswer = o.str("initialAnswer"),
         )
     }
 }

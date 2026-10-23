@@ -2,6 +2,7 @@ package org.anikodev.candywrapper.core.store
 
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.Serializable
+import org.anikodev.candywrapper.core.model.ModelSelection
 import org.anikodev.candywrapper.core.model.ProjectSummary
 import org.anikodev.candywrapper.core.model.SavedEnvironment
 import org.anikodev.candywrapper.core.model.ThreadSummary
@@ -29,7 +30,30 @@ data class CachedThread(
     /** runId to status, for the visibility rules. */
     val runs: Map<String, String> = emptyMap(),
     val hasMoreHistory: Boolean = false,
+    val historyCursor: String? = null,
+    val meta: ThreadMeta? = null,
+    /** Queued runs: runId to its queue position and user message. */
+    val queue: Map<String, QueuedRun> = emptyMap(),
+    /** The text of each queued run's message. */
+    val queuedText: Map<String, String> = emptyMap(),
+    /** Runtime request id to `pending`, `resolved`, `expired`, `cancelled` or `not_resumable`. */
+    val requests: Map<String, String> = emptyMap(),
+    /** Checkpoint id to its app run ordinal, the unit of `getTurnDiff`. */
+    val checkpoints: Map<String, Int> = emptyMap(),
 )
+
+/** The thread's current settings, from `projection.thread` and every `thread.*` event. */
+@Serializable
+data class ThreadMeta(
+    val providerInstanceId: String? = null,
+    val model: ModelSelection? = null,
+    val runtimeMode: String = "full-access",
+    val interactionMode: String = "default",
+    val projectId: String? = null,
+)
+
+@Serializable
+data class QueuedRun(val position: Int, val messageId: String)
 
 /**
  * Local persistence. The app implements it with SQLite; every call may block, so callers run it
