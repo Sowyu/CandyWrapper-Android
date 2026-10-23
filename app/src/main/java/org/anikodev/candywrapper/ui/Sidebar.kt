@@ -360,7 +360,7 @@ private fun topLabel(top: TopStatus) = when (top) {
     TopStatus.DONE -> "Done"
 }
 
-/** The card's status slot: T3's icon, label and, while working, how long; static, the minute clock moves it. */
+/** The card's status slot: T3's icon, label and, while working, how long, ticking each second. */
 @Composable
 private fun TopStatusLabel(top: TopStatus, t: ThreadSummary, now: Long) {
     val c = Candy.colors
@@ -377,8 +377,8 @@ private fun TopStatusLabel(top: TopStatus, t: ThreadSummary, now: Long) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Icon(icon, color, 16.dp)
         Txt(topLabel(top), CandyType.xsMedium, color, maxLines = 1)
-        if (top == TopStatus.WORKING && t.workingSince > 0 && now - t.workingSince >= 60_000) {
-            Txt(duration(now - t.workingSince), CandyType.xsMedium.merge(TextStyle(fontFeatureSettings = "tnum")), color, maxLines = 1)
+        if (top == TopStatus.WORKING && t.workingSince > 0) {
+            TickingText(t.workingSince, ::duration, CandyType.xsMedium.merge(TextStyle(fontFeatureSettings = "tnum")), color)
         }
     }
 }

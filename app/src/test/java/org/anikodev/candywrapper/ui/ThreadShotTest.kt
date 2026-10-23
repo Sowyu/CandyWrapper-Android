@@ -20,7 +20,7 @@ class ThreadShotTest {
         ) {
             ThreadView(
                 title = state.title!!, project = "CandyWrapper-Android", subtitle = null, subtitleError = false,
-                state = state, host = ThreadFixtures.host(), workingSince = Fixtures.NOW - 4 * 60_000, now = Fixtures.NOW, working = false,
+                state = state, host = ThreadFixtures.host(), workingSince = Fixtures.NOW - 4 * 60_000, working = false,
                 onLoadOlder = {},
             ) { bottom() }
         }

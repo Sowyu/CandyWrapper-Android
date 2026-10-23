@@ -30,7 +30,6 @@ CandyWrapper for Android copies T3 Code's desktop app, adapted to a phone. T3's 
 | `dialog-backdrop` and `dropdown-glass` blur | Solid colours: the backdrop tint and `--popover` | A live blur repaints every frame under it; CandyWrapper made the same substitution |
 | Sidebar `surface-grain` texture | Flat `--sidebar` | A full-height texture costs memory and fill for a 3.5% effect |
 | Working status pulses (`animate-status-pulse`) | A static dot | Nothing repaints while idle |
-| "Working for 4s" ticks every second | Advances each minute | Same rule; the minute clock is the only ticker |
 | Blue send button | CandyWrapper's plum | The owner's choice for CandyWrapper (macOS design.md) |
 | Code blocks show pierre's file-type icon | A small mono language tag | No file-type icon set yet |
 | Inline code has a border and radius | A tinted background | Compose text spans cannot draw borders |

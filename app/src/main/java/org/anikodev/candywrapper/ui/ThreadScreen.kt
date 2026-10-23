@@ -103,7 +103,6 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
     val (summary, project) = remember(shell, threadId) {
         shell.groups.firstNotNullOfOrNull { g -> g.threads.firstOrNull { it.id == threadId }?.let { it to g.project } } ?: (null to null)
     }
-    val now = rememberMinuteClock()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val live = connection is ConnectionState.Live
@@ -205,7 +204,6 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
             state = state,
             host = host,
             workingSince = summary?.workingSince ?: 0,
-            now = now,
             working = summary?.pill == StatusPill.WORKING,
             onLoadOlder = { scope.launch { thread.loadOlder() } },
             empty = {
@@ -295,7 +293,6 @@ fun ThreadView(
     state: ThreadSession.State,
     host: TimelineHost,
     workingSince: Long,
-    now: Long,
     working: Boolean,
     onLoadOlder: () -> Unit,
     empty: @Composable () -> Unit = {},
@@ -324,7 +321,7 @@ fun ThreadView(
             if (state.items.isEmpty()) {
                 Column(Modifier.fillMaxSize().padding(horizontal = side, vertical = 16.dp)) { empty() }
             } else {
-                Timeline(state, host, workingSince, now, working, side, onLoadOlder)
+                Timeline(state, host, workingSince, working, side, onLoadOlder)
             }
         }
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
@@ -334,7 +331,7 @@ fun ThreadView(
 }
 
 @Composable
-private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSince: Long, now: Long, working: Boolean, side: Dp, loadOlder: () -> Unit) {
+private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSince: Long, working: Boolean, side: Dp, loadOlder: () -> Unit) {
     val c = Candy.colors
     val listState = rememberLazyListState()
     // Newest at the bottom with no scroll work: the list is reversed and laid out from the end.
@@ -364,7 +361,7 @@ private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSinc
             reverseLayout = true,
             contentPadding = PaddingValues(start = side, end = side, top = 8.dp, bottom = 16.dp),
         ) {
-            if (showWorking) item(key = "working", contentType = "working") { WorkingRow(workingSince, now, state.queued.size) }
+            if (showWorking) item(key = "working", contentType = "working") { WorkingRow(workingSince, state.queued.size) }
             items(reversed, key = { it.key }, contentType = { contentType(it) }) { item ->
                 Box(Modifier.padding(top = rowGap(item).dp)) {
                     when (item) {

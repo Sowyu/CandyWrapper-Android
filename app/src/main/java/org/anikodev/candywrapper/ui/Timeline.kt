@@ -417,14 +417,17 @@ private fun groupSummary(group: ToolGroup): String {
 
 /**
  * The line under the newest message while a run is active: T3's "Working for 4s" over a hairline.
- * Static text; the minute clock moves it.
+ * The seconds tick on the shared ticker while the row is on screen.
  */
 @Composable
-fun WorkingRow(since: Long, now: Long, queued: Int) {
+fun WorkingRow(since: Long, queued: Int) {
     val c = Candy.colors
     Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-        val time = if (since > 0) " for ${duration(now - since)}" else ""
-        Txt("Working$time" + if (queued > 0) " · $queued queued" else "", CandyType.sm.merge(TextStyle(fontFeatureSettings = "tnum")), c.mutedForeground, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
+        val style = CandyType.sm.merge(TextStyle(fontFeatureSettings = "tnum"))
+        val tail = if (queued > 0) " · $queued queued" else ""
+        val padding = Modifier.padding(start = 2.dp, bottom = 8.dp)
+        if (since > 0) TickingText(since, ::workingTimer, style, c.mutedForeground, prefix = "Working for ", suffix = tail, modifier = padding)
+        else Txt("Working...$tail", style, c.mutedForeground, modifier = padding)
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.border.copy(alpha = c.border.alpha * 0.6f)))
     }
 }

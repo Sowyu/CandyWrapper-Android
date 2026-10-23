@@ -10,6 +10,7 @@ const val TABLET = "w1280dp-h800dp-xhdpi"
 
 /** Golden images live in app/src/test/snapshots so they show on GitHub; `recordRoborazziDebug` rewrites them. */
 fun shot(name: String, dark: Boolean, content: @Composable () -> Unit) {
+    wallClock = { Fixtures.NOW }
     captureRoboImage(
         "src/test/snapshots/$name.${if (dark) "dark" else "light"}.png",
         RoborazziOptions(compareOptions = RoborazziOptions.CompareOptions(changeThreshold = 0.01f)),

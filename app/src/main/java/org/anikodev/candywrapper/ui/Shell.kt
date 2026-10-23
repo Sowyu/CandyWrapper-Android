@@ -181,7 +181,8 @@ private fun PhoneShell(drawer: DrawerState, windowWidth: Dp, sidebar: @Composabl
                                 .background(c.sidebar)
                                 .draggable(drag, Orientation.Horizontal, onDragStopped = { v -> drawer.settle(v) }),
                         ) {
-                            sidebar()
+                            // Closed, the panel is composed but not placed: its working labels hold no ticker.
+                            androidx.compose.runtime.CompositionLocalProvider(LocalTicking provides showing) { sidebar() }
                             Box(Modifier.align(Alignment.CenterEnd).width(1.dp).fillMaxHeight().background(c.sidebarBorder))
                         }
                     },
