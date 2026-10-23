@@ -33,6 +33,8 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
     val sessions by graph.environments.sessions.collectAsStateWithLifecycle()
     val account by graph.account.collectAsStateWithLifecycle()
     val theme by graph.theme.collectAsStateWithLifecycle()
+    val legacySidebar by graph.legacySidebar.value.collectAsStateWithLifecycle()
+    val planMode by graph.planMode.value.collectAsStateWithLifecycle()
     val c = Candy.colors
     var selected by remember { mutableStateOf<EnvironmentSession?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -73,6 +75,9 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                     }
                 }
 
+                GroupLabel("Legacy features")
+                LegacyFeatures(planMode, legacySidebar, graph.planMode::set, graph.legacySidebar::set)
+
                 GroupLabel("App")
                 Card {
                     ListRow("Timing", icon = Icons.Activity, detail = "Start, connect and thread-open steps in milliseconds") { nav.push(Screen.Diagnostics) }
@@ -108,6 +113,19 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                 }
             }
         }
+    }
+}
+
+/**
+ * T3's "Legacy features" settings: both off by default and stored on this phone only. Plan mode
+ * off sends every turn in build mode; the legacy sidebar is the per-project tree.
+ */
+@Composable
+fun LegacyFeatures(planMode: Boolean, legacySidebar: Boolean, onPlanMode: (Boolean) -> Unit, onLegacySidebar: (Boolean) -> Unit) {
+    Card {
+        SwitchRow("Plan mode", planMode, detail = "Restore the Plan toggle in the composer. Off uses build mode.", icon = Icons.ListTodo, onChange = onPlanMode)
+        Divider()
+        SwitchRow("Legacy sidebar", legacySidebar, detail = "Restore per-project thread trees instead of the default flat sidebar.", icon = Icons.PanelLeft, onChange = onLegacySidebar)
     }
 }
 

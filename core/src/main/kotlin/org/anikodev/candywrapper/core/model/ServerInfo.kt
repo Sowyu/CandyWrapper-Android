@@ -83,6 +83,19 @@ data class ProviderInfo(
 }
 
 /**
+ * web `resolveComposerInteractionMode`: the Plan toggle is offered only with the Plan mode setting
+ * on and a known provider that shows it; otherwise every turn runs in `default` mode.
+ */
+data class InteractionModeChoice(val enabled: Boolean, val mode: String) {
+    companion object {
+        fun resolve(planModeEnabled: Boolean, provider: ProviderInfo?, mode: String): InteractionModeChoice {
+            val enabled = planModeEnabled && provider != null && provider.showInteractionModeToggle
+            return InteractionModeChoice(enabled, if (enabled) mode else "default")
+        }
+    }
+}
+
+/**
  * What the composer needs from `server.getConfig`: providers with their models, the defaults for
  * new threads, and whether the server picks queue or steer for a message sent during a run.
  */

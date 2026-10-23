@@ -67,6 +67,25 @@ class AppGraph(private val app: Application) {
     /** Light, dark or follow the system; stored with the UI state. */
     val theme: StateFlow<ThemeChoice> = _theme
 
+    /** Settings > Legacy sidebar: T3's per-project tree instead of the new flat sidebar. Off by default, as `legacySidebarEnabled`. */
+    val legacySidebar = UiSetting(LEGACY_SIDEBAR, false)
+
+    /** Settings > Plan mode: the Plan toggle in the composer. Off by default, as `planModeEnabled`; off means build mode. */
+    val planMode = UiSetting(PLAN_MODE, false)
+
+    /**
+     * The sidebar's machine: an environment id or [ALL_MACHINES]. Null until the user picks one;
+     * the sidebar then shows all machines when more than one is configured.
+     */
+    val machineScope = UiValue(MACHINE_SCOPE)
+
+    /** The new sidebar's project filter: a project group key, null for All projects (`sidebarProjectScopeKey`). */
+    val projectScope = UiValue(PROJECT_SCOPE)
+
+    /** Whether the Settled and Snoozed shelves are open (T3 keeps both in local storage, closed by default). */
+    val settledShelf = UiSetting(SETTLED_SHELF, false)
+    val snoozedShelf = UiSetting(SNOOZED_SHELF, false)
+
     private val _account = MutableStateFlow<ClerkAccount?>(null)
     val account: StateFlow<ClerkAccount?> = _account
 
@@ -84,6 +103,8 @@ class AppGraph(private val app: Application) {
         lastEnvironmentId = db.uiValue(LAST_ENV)
         lastThreadId = db.uiValue(LAST_THREAD)
         _theme.value = db.uiValue(THEME)?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: ThemeChoice.SYSTEM
+        for (s in listOf(legacySidebar, planMode, settledShelf, snoozedShelf)) s.load()
+        for (v in listOf(machineScope, projectScope)) v.load()
         environments.restore(envs, shells)
         Timeline.span("cache.loaded", start, "${envs.size} environments, ${shells.values.sumOf { it?.threads?.size ?: 0 }} threads")
         // The first frame shows the last thread, so its rows are read here, while the activity is created.
@@ -124,6 +145,29 @@ class AppGraph(private val app: Application) {
         scope.launch(Dispatchers.IO) { db.setUiValue(THEME, choice.name) }
     }
 
+    /** A local switch stored with the UI state. Never sent to the computer. */
+    inner class UiSetting(private val key: String, default: Boolean) {
+        private val flow = MutableStateFlow(default)
+        val value: StateFlow<Boolean> = flow
+        internal fun load() { db.uiValue(key)?.let { flow.value = it == "1" } }
+        fun set(on: Boolean) {
+            flow.value = on
+            scope.launch(Dispatchers.IO) { db.setUiValue(key, if (on) "1" else "0") }
+        }
+    }
+
+    /** A local string stored with the UI state, null when unset. */
+    inner class UiValue(private val key: String) {
+        private val flow = MutableStateFlow<String?>(null)
+        val value: StateFlow<String?> = flow
+        internal fun load() { flow.value = db.uiValue(key) }
+        fun set(v: String?) {
+            if (flow.value == v) return
+            flow.value = v
+            scope.launch(Dispatchers.IO) { db.setUiValue(key, v) }
+        }
+    }
+
     /** After a sign-in or sign-out. */
     fun accountChanged() {
         _account.value = clerk.account()
@@ -152,9 +196,17 @@ class AppGraph(private val app: Application) {
         })
     }
 
-    private companion object {
-        const val LAST_ENV = "last_env"
-        const val THEME = "theme"
-        const val LAST_THREAD = "last_thread"
+    companion object {
+        /** [machineScope] for every machine at once. */
+        const val ALL_MACHINES = "all"
+        private const val LEGACY_SIDEBAR = "legacy_sidebar"
+        private const val PLAN_MODE = "plan_mode"
+        private const val MACHINE_SCOPE = "machine_scope"
+        private const val PROJECT_SCOPE = "project_scope"
+        private const val SETTLED_SHELF = "shelf_settled"
+        private const val SNOOZED_SHELF = "shelf_snoozed"
+        private const val LAST_ENV = "last_env"
+        private const val THEME = "theme"
+        private const val LAST_THREAD = "last_thread"
     }
 }

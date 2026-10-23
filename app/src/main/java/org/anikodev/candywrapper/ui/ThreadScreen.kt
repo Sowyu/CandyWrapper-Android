@@ -57,6 +57,7 @@ import org.anikodev.candywrapper.AppGraph
 import org.anikodev.candywrapper.core.diff.ItemDetail
 import org.anikodev.candywrapper.core.model.StatusPill
 import org.anikodev.candywrapper.core.sync.Commands
+import org.anikodev.candywrapper.core.model.InteractionModeChoice
 import org.anikodev.candywrapper.core.sync.ConnectionState
 import org.anikodev.candywrapper.core.sync.Delivery
 import org.anikodev.candywrapper.core.sync.EnvironmentSession
@@ -135,13 +136,19 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
         }
     }
 
+    // Plan mode is a legacy setting, off by default; off, the thread's next turn runs in default mode.
+    val planMode by graph.planMode.value.collectAsStateWithLifecycle()
+    val provider = state.meta.model?.instanceId?.let(server::provider)
+    val modeChoice = InteractionModeChoice.resolve(planMode, provider, state.meta.interactionMode)
+
     fun send(delivery: Delivery) {
         val text = draft.trim()
         val picked = files.toList()
+        val mode = modeChoice.mode
         act("Sending") {
             val uploaded = uploadAll(context, session, picked) { busy = it }
             busy = "Sending"
-            thread.send(text, uploaded, delivery)
+            thread.send(text, uploaded, delivery, mode)
             draft = ""
             files.clear()
         }
@@ -187,8 +194,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
         slowSync -> "Catching up"
         else -> null
     }
-    val settings = ComposerSettings(state.meta.model, state.meta.runtimeMode, state.meta.interactionMode)
-    val provider = state.meta.model?.instanceId?.let(server::provider)
+    val settings = ComposerSettings(state.meta.model, state.meta.runtimeMode, modeChoice.mode)
 
     Box(Modifier.fillMaxSize()) {
         ThreadView(
@@ -248,7 +254,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                 connected = live,
                 onModel = { m -> act(null) { thread.setModel(m) } },
                 onRuntimeMode = { m -> act(null) { thread.setRuntimeMode(m) } },
-                onTogglePlan = if (provider?.showInteractionModeToggle != false) {
+                onTogglePlan = if (modeChoice.enabled) {
                     { act(null) { thread.setInteractionMode(if (state.meta.interactionMode == "plan") "default" else "plan") } }
                 } else null,
                 onAttach = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
@@ -429,7 +435,9 @@ fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: S
     var busy by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(server) { if (model == null) model = server.modelForNewThread(null) }
-    val settings = ComposerSettings(model, runtimeMode ?: server.defaultRuntimeMode, interactionMode)
+    val planMode by graph.planMode.value.collectAsStateWithLifecycle()
+    val modeChoice = InteractionModeChoice.resolve(planMode, model?.instanceId?.let(server::provider), interactionMode)
+    val settings = ComposerSettings(model, runtimeMode ?: server.defaultRuntimeMode, modeChoice.mode)
     val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICKS)) { uris ->
         for (uri in uris) if (files.size < MAX_PICKS) describePick(context, uri)?.let { if (files.none { f -> f.uri == uri }) files += it }
     }
@@ -456,7 +464,7 @@ fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: S
                     running = false, canStop = false, files = files, busy = busy, error = error, connected = live && model != null,
                     onModel = { model = it },
                     onRuntimeMode = { runtimeMode = it },
-                    onTogglePlan = { interactionMode = if (interactionMode == "plan") "default" else "plan" },
+                    onTogglePlan = if (modeChoice.enabled) ({ interactionMode = if (interactionMode == "plan") "default" else "plan" }) else null,
                     onAttach = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     onRemoveFile = { files.remove(it) },
                     onSend = {

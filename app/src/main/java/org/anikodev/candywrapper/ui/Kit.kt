@@ -78,6 +78,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
@@ -500,6 +501,34 @@ fun ListRow(
 }
 
 /**
+ * T3's `Switch` at its touch size: a 38x22dp track, `bg-primary` when on and `bg-input` when off,
+ * a 18dp thumb that slides over 150 ms. The whole [ListRow] it sits in toggles it.
+ */
+@Composable
+fun Switch(on: Boolean, modifier: Modifier = Modifier) {
+    val c = Candy.colors
+    val x by animateFloatAsState(if (on) 1f else 0f, Motion.fast(), label = "switch")
+    Box(
+        modifier.size(38.dp, 22.dp).clip(CircleShape).background(if (on) c.primary else c.input).padding(2.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(
+            Modifier.graphicsLayer { translationX = x * 16.dp.toPx() }.size(18.dp).clip(CircleShape)
+                .background(if (!on && c.dark) c.mutedForeground else c.background),
+        )
+    }
+}
+
+/** A setting that is on or off: the [ListRow] toggles a trailing [Switch]. */
+@Composable
+fun SwitchRow(label: String, on: Boolean, detail: String? = null, icon: ImageVector? = null, onChange: (Boolean) -> Unit) {
+    ListRow(
+        label, Modifier.semantics { stateDescription = if (on) "On" else "Off" }, detail = detail, icon = icon,
+        trailing = { Switch(on) },
+    ) { onChange(!on) }
+}
+
+/**
  * T3's dialog as it sits on a phone (dialog.tsx `bottomStickOnMobile`): pinned to the bottom edge,
  * `rounded-t-2xl`, popover fill, over the `dialog-backdrop`. It rises in over 200 ms; Back and a tap
  * on the backdrop close it.
@@ -634,6 +663,7 @@ fun MenuItem(
     selected: Boolean = false,
     enabled: Boolean = true,
     iconTint: Color? = null,
+    leading: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
@@ -650,6 +680,7 @@ fun MenuItem(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (icon != null) Icon(icon, iconTint ?: if (destructive) fg else c.mutedForeground.copy(alpha = 0.8f), 18.dp, Modifier.padding(top = if (detail != null) 3.dp else 0.dp))
+        if (leading != null) leading()
         Column(Modifier.weight(1f)) {
             Txt(label, CandyType.base, fg, maxLines = 2)
             if (detail != null) Txt(detail, CandyType.sm, c.mutedForeground)

@@ -260,9 +260,14 @@ class ThreadSession internal constructor(
 
     // Actions. Each throws with a message the composer shows; nothing retries on its own (protocol.md 8.8).
 
-    /** Sends a message: starts a run, or queues or steers behind the active one. */
-    suspend fun send(text: String, attachments: List<UploadedAttachment> = emptyList(), delivery: Delivery = Delivery.AUTO) {
+    /**
+     * Sends a message: starts a run, or queues or steers behind the active one. A [mode] that
+     * differs from the thread's is set first, as T3's `persistThreadSettingsForNextTurn` does; with
+     * plan mode off that is `default`.
+     */
+    suspend fun send(text: String, attachments: List<UploadedAttachment> = emptyList(), delivery: Delivery = Delivery.AUTO, mode: String? = null) {
         val s = _state.value
+        if (mode != null && mode != s.meta.interactionMode) environment.dispatch(Commands.setInteractionMode(threadId, mode))
         val command = Commands.sendMessage(
             threadId, text, attachments,
             activeRunId = synchronized(lock) { projection.activeRunId() },

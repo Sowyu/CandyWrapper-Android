@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.anikodev.candywrapper.core.json.WireJson
 import org.anikodev.candywrapper.core.json.obj
 import org.anikodev.candywrapper.core.json.str
+import org.anikodev.candywrapper.core.model.InteractionModeChoice
 import org.anikodev.candywrapper.core.model.ModelSelection
 import org.anikodev.candywrapper.core.model.OptionValue
 import org.anikodev.candywrapper.core.model.ServerInfo
@@ -97,6 +98,16 @@ class ComposerTest {
         assertEquals("provider.switch", Commands.setModel("t", "codex", ModelSelection("claudeAgent", "m"), false).str("type"))
         assertEquals("thread.model-selection.set", Commands.setModel("t", "claudeAgent", ModelSelection("claudeAgent", "m"), false).str("type"))
         assertEquals("thread.model-selection.set", Commands.setModel("t", "codex", ModelSelection("claudeAgent", "m"), true).str("type"))
+    }
+
+    @Test
+    fun planModeIsOfferedOnlyWhenTheSettingAndTheProviderAllowIt() {
+        val claude = ServerInfo.parse(json("""{"providers":[{"instanceId":"c","driver":"claudeAgent","models":[]},{"instanceId":"x","showInteractionModeToggle":false,"models":[]}]}"""))
+        assertEquals(InteractionModeChoice(true, "plan"), InteractionModeChoice.resolve(true, claude.provider("c"), "plan"))
+        // Off by default: a thread left in plan mode sends its next turn in default mode.
+        assertEquals(InteractionModeChoice(false, "default"), InteractionModeChoice.resolve(false, claude.provider("c"), "plan"))
+        assertEquals(InteractionModeChoice(false, "default"), InteractionModeChoice.resolve(true, claude.provider("x"), "plan"))
+        assertEquals(InteractionModeChoice(false, "default"), InteractionModeChoice.resolve(true, null, "plan"))
     }
 
     @Test
