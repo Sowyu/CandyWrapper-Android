@@ -4,8 +4,8 @@ A native Kotlin and Compose client for T3 Code. The user runs T3 Code on a Mac a
 
 ## Layout
 
-- `core` is a pure-Kotlin JVM module with no Android dependency: RPC framing and connection (`rpc`), HTTP clients (`http`), pairing and environment HTTP (`auth`), Clerk, relay and DPoP (`connect`), reducers and sessions (`sync`), models (`model`), Markdown (`markdown`), cache and secret interfaces (`store`) and timing marks (`timing`).
-- `app` is the Android app: boot and wiring (`AppGraph`, `CandyApp`, `MainActivity`), SQLite and Keystore storage (`data`), and Compose screens (`ui`).
+- `core` is a pure-Kotlin JVM module with no Android dependency: RPC framing and connection (`rpc`), HTTP clients (`http`), pairing and environment HTTP (`auth`), Clerk, relay and DPoP (`connect`), reducers, sessions and command encoders (`sync`), models (`model`), Markdown and code highlighting (`markdown`), diff parsing and tool output (`diff`), cache and secret interfaces (`store`) and timing marks (`timing`).
+- `app` is the Android app: boot and wiring (`AppGraph`, `CandyApp`, `MainActivity`), SQLite and Keystore storage (`data`), and Compose screens (`ui`). Screens draw with the kit in `ui/Kit.kt`, `ui/Theme.kt` and `ui/Icons.kt`, not Material components; Material stays only for the updater's card.
 - `core/src/test/resources/transcripts` holds recorded traffic from a real `t3 serve`, copied from CandyWrapper's fixtures. Tests replay it.
 
 ## Blueprint
@@ -29,4 +29,5 @@ The macOS app at `~/CandyWrapper` is the reference. Its `docs/protocol.md` is th
 - Add a Timeline mark for any new step on the start, connect or thread-open path.
 - Do not launch an emulator or touch a device unless the user agrees.
 - Commit subjects look like `fix(core): what changed`. No AI attribution in commits.
+- Every command goes through `Commands` in core, with a test against the contract. The UI never builds JSON.
 - Mark a deliberate shortcut with `// ponytail: <ceiling>, <upgrade trigger>`.

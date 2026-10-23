@@ -11,6 +11,9 @@ These are the targets, how the code is built to meet them and which Timeline mar
 | Opening a thread to live | no budget yet, report the number | `env.<name>.thread.<id>.live` |
 | Connect, T3 Connect, nothing expired | socket open on the first round trip after TLS | `connect.<name>.*`, `env.<name>.socket.open` |
 | Shell caught up after a reconnect | report the number | `env.<name>.shell.live` |
+| A command accepted by the server (send, stop, approve) | report the number | `env.<name>.command.<type>` |
+| An older history page merged | report the number | `env.<name>.thread.<id>.history.page` |
+| A run's diff fetched and parsed | report the number | `diff.loaded` |
 
 ## How the code meets them
 
@@ -45,7 +48,9 @@ Threads:
 - An opened thread paints from its cached rows, then subscribes with `afterSequence` from that cache, so the server replays only the events since. The four most recent threads stay in memory for instant reopen.
 - Decoding, reducing, Markdown parsing and grouping tool calls happen on the socket's reader thread. The UI gets one immutable list per chunk, and rows that did not change keep their instance, so Compose skips them.
 - The thread list is a reversed `LazyColumn` with stable keys and content types, so it starts at the newest row with no scroll work.
-- Markdown renders as Compose text. There is no WebView.
+- Markdown renders as Compose text. There is no WebView. Code blocks are tokenized for colour during the parse, off the main thread; diffs are parsed on `Dispatchers.Default` and drawn one line per list item.
+- Nothing animates. Presses draw a flat overlay while the finger is down, "Working" is static text the minute clock updates, and sheets appear on the next frame.
+- Tool output and edit diffs load only when a row is expanded, through `orchestration.getTurnItem`.
 
 ## Measured on the JVM
 
