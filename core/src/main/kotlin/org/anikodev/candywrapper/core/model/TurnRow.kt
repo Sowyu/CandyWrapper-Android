@@ -224,3 +224,18 @@ data class Question(
         )
     }
 }
+
+/**
+ * The answer a question sends (apps/mobile threadActivity.ts:396-423): a typed answer wins, then
+ * the picked options (a list for multi-select), then the editable initial answer. Null while the
+ * question still needs one.
+ */
+fun Question.answer(picked: List<String>, typed: String?): Any? {
+    if (allowCustomAnswer && !typed.isNullOrBlank()) return typed
+    return when {
+        multiSelect && picked.isNotEmpty() -> picked
+        picked.isNotEmpty() -> picked.first()
+        initialAnswer != null -> typed.orEmpty()
+        else -> null
+    }
+}

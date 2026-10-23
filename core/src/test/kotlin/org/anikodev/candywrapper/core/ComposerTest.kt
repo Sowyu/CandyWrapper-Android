@@ -15,6 +15,7 @@ import org.anikodev.candywrapper.core.json.str
 import org.anikodev.candywrapper.core.model.ModelSelection
 import org.anikodev.candywrapper.core.model.OptionValue
 import org.anikodev.candywrapper.core.model.ServerInfo
+import org.anikodev.candywrapper.core.model.answer
 import org.anikodev.candywrapper.core.sync.Commands
 import org.anikodev.candywrapper.core.sync.Delivery
 import org.anikodev.candywrapper.core.sync.ThreadProjection
@@ -173,6 +174,18 @@ class ComposerTest {
         assertTrue(p.pending().isEmpty())
         // The cache keeps it hidden.
         assertTrue(ThreadProjection("t").apply { restore(p.toCache()) }.pending().isEmpty())
+    }
+
+    @Test
+    fun answersFollowT3sRules() {
+        val q = org.anikodev.candywrapper.core.model.Question("q", "", "Which?", multiSelect = false)
+        assertNull(q.answer(emptyList(), null))
+        assertEquals("a", q.answer(listOf("a", "b"), null))
+        assertEquals("typed", q.answer(listOf("a"), "typed"))
+        assertEquals(listOf("a", "b"), q.copy(multiSelect = true).answer(listOf("a", "b"), "  "))
+        assertEquals("a", q.copy(allowCustomAnswer = false).answer(listOf("a"), "typed"))
+        // An editable initial answer can be sent empty.
+        assertEquals("", q.copy(initialAnswer = "").answer(emptyList(), null))
     }
 
     @Test
