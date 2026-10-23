@@ -50,6 +50,8 @@ class MenuShotTest {
 
     @Test fun accessMenuLight() = screen("menu-access-phone", false) { ComposerWith(Picker.ACCESS) }
     @Test fun accessMenuDark() = screen("menu-access-phone", true) { ComposerWith(Picker.ACCESS) }
+    @Test fun effortMenuLight() = screen("menu-effort-phone", false) { ComposerWith(Picker.OPTIONS) }
+    @Test fun effortMenuDark() = screen("menu-effort-phone", true) { ComposerWith(Picker.OPTIONS) }
     @Test fun modelMenuLight() = screen("menu-model-phone", false) { ComposerWith(Picker.MODEL) }
     @Test fun modelMenuDark() = screen("menu-model-phone", true) { ComposerWith(Picker.MODEL) }
 
