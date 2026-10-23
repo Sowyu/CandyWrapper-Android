@@ -212,7 +212,7 @@ private fun ChangedFilesCard(row: TurnRow, host: TimelineHost) {
     val canOpen = row.checkpointId != null
     val shape = RoundedCornerShape(Radius.lg)
     val fill = if (c.dark) c.input.copy(alpha = c.input.alpha * 0.2f) else c.secondary
-    Column(Modifier.fillMaxWidth().clip(shape).background(fill).let { if (c.dark) it else it.border(1.dp, c.border.copy(alpha = 0.6f), shape) }) {
+    Column(Modifier.fillMaxWidth().clip(shape).background(fill).let { if (c.dark) it else it.border(1.dp, c.border.copy(alpha = c.border.alpha * 0.6f), shape) }) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 44.dp)
                 .let { if (canOpen) it.clickable(role = Role.Button, onClickLabel = "Open diff") { host.openDiff(row.checkpointId!!, row.text ?: "Changes") } else it }

@@ -26,7 +26,7 @@ class RedesignMenuShotTest {
         },
     )
 
-    private fun picker(dark: Boolean) {
+    private fun picker(dark: Boolean, name: String = "model-picker-phone") {
         wallClock = { Fixtures.NOW }
         compose.setContent {
             CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT, RedesignStyle(on = true)) {
@@ -47,11 +47,13 @@ class RedesignMenuShotTest {
         compose.mainClock.advanceTimeBy(400)
         compose.waitForIdle()
         captureScreenRoboImage(
-            "src/test/snapshots/redesign/model-picker-phone.${if (dark) "dark" else "light"}.png",
+            "src/test/snapshots/redesign/$name.${if (dark) "dark" else "light"}.png",
             RoborazziOptions(compareOptions = RoborazziOptions.CompareOptions(changeThreshold = 0.01f)),
         )
     }
 
     @Test fun pickerLight() = picker(false)
     @Test fun pickerDark() = picker(true)
+    @Config(qualifiers = TABLET) @Test fun pickerTabletLight() = picker(false, "model-picker-tablet")
+    @Config(qualifiers = TABLET) @Test fun pickerTabletDark() = picker(true, "model-picker-tablet")
 }

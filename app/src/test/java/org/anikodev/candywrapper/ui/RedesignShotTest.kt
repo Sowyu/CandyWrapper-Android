@@ -79,7 +79,7 @@ class RedesignShotTest {
     @Config(qualifiers = TABLET) @Test fun tabletLight() = tablet(false)
     @Config(qualifiers = TABLET) @Test fun tabletDark() = tablet(true)
 
-    private fun settings(dark: Boolean) = redesignShot("settings-phone", dark) {
+    private fun settings(dark: Boolean, name: String = "settings-phone") = redesignShot(name, dark) {
         AppShell(DrawerState(open = false), sidebar = {}) {
             ArtEmphasisEffect(ArtEmphasis.SETTINGS)
             Column(Modifier.fillMaxSize()) {
@@ -95,4 +95,6 @@ class RedesignShotTest {
     }
     @Test fun settingsLight() = settings(false)
     @Test fun settingsDark() = settings(true)
+    @Config(qualifiers = TABLET) @Test fun settingsTabletLight() = settings(false, "settings-tablet")
+    @Config(qualifiers = TABLET) @Test fun settingsTabletDark() = settings(true, "settings-tablet")
 }

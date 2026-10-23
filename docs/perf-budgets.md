@@ -58,6 +58,14 @@ Threads:
 - Project icons follow client-runtime's `projectFaviconCache`: one 96px PNG thumbnail per icon in the app's files, at most 128. An icon on screen asks its computer for the signed URL once the socket is live, at most every five minutes, one request for every row of that project. It downloads (at most 4 MiB, mark `icon.fetched`) only when the URL's revision, the file's hash, changed. Icons off screen cost nothing.
 - Tool output and edit diffs load only when a row is expanded, through `orchestration.getTurnItem`.
 
+Redesign (Experimental):
+
+- The first frame never waits for the art. The panel paints the solid background, the art renders on `Dispatchers.Default` once the panel has a size, then fades in over 150 ms. Mark `redesign.art` reports the size and whether it came from the cache.
+- One canvas pixel is one 2dp dot, drawn scaled with nearest filtering: about 360 KB for a phone, 1 MB for a 1280x800dp tablet, plus a blurred copy at a sixteenth of that. The canvas is a PNG in the cache keyed by picture, size and background, at most five kept, so later starts decode it instead of rendering.
+- A keyboard or a shorter page never re-renders: the canvas keeps the tallest height seen at a width. A rotation renders once, 150 ms after the size settles.
+- The art sits in its own graphics layer, so a scrolling list never redraws it. Frosted panes draw the pre-blurred copy; nothing blurs per frame.
+- The dot grids and the rolling digits move only on the shared second ticker.
+
 ## Measured on the JVM
 
 From `PerfTest`, a desktop JVM, warm, median of 30 runs. A mid-range phone is roughly 3 to 5 times slower.
@@ -71,5 +79,6 @@ From `PerfTest`, a desktop JVM, warm, median of 30 runs. A mid-range phone is ro
 | Shell snapshot of 300 threads to the list model | 7.1 ms |
 | Rebuild the 300-thread list after one delta | 0.17 ms |
 | Decode one `thread.updated` row | 0.02 ms |
+| Paint, dither and blur Redesign's phone canvas, 206x446 dots (DitherArtTest, median of 5) | 19 ms |
 
 Device numbers are not measured yet. Run a release build, open Timing, and copy the report.
