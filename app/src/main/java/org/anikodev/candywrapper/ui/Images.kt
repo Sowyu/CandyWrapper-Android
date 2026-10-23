@@ -38,6 +38,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -147,7 +148,7 @@ private sealed interface Loaded {
  * "Image unavailable", which a tap retries. Leaving the screen cancels the load.
  */
 @Composable
-fun RemoteImage(ref: ImageRef, px: Int, modifier: Modifier = Modifier, crop: Boolean = false, onClick: (() -> Unit)? = null) {
+fun RemoteImage(ref: ImageRef, px: Int, modifier: Modifier = Modifier, crop: Boolean = false, onClick: (() -> Unit)? = null, onLoaded: ((IntSize) -> Unit)? = null) {
     val c = Candy.colors
     val images = LocalImages.current
     var attempt by remember(ref.key) { mutableIntStateOf(0) }
@@ -156,6 +157,7 @@ fun RemoteImage(ref: ImageRef, px: Int, modifier: Modifier = Modifier, crop: Boo
         value = Loaded.Loading
         value = images?.load(ref, px)?.let { Loaded.Ready(it) } ?: Loaded.Failed
     }
+    (state as? Loaded.Ready)?.let { ready -> if (onLoaded != null) LaunchedEffect(ready) { onLoaded(IntSize(ready.bitmap.width, ready.bitmap.height)) } }
     Box(
         modifier
             .semantics { contentDescription = ref.name.ifBlank { "Image" } }
@@ -193,9 +195,12 @@ fun NaturalImage(ref: ImageRef, onClick: () -> Unit, modifier: Modifier = Modifi
     val c = Candy.colors
     val images = LocalImages.current
     val density = LocalDensity.current
-    val natural by produceState(images?.size(ref), images, ref.key) {
+    val measured by produceState(images?.size(ref), images, ref.key) {
         if (value == null) value = images?.measure(ref)
     }
+    // A web image has no size from the server; the decoded picture gives its ratio.
+    var decoded by remember(ref.key) { mutableStateOf<IntSize?>(null) }
+    val natural = measured ?: decoded
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val maxW = minOf(maxWidth, ImageMax)
         val (w, h) = with(density) {
@@ -209,6 +214,7 @@ fun NaturalImage(ref: ImageRef, onClick: () -> Unit, modifier: Modifier = Modifi
             Modifier.width(w).height(h).clip(shape).background(c.muted.copy(alpha = c.muted.alpha * 0.5f))
                 .let { if (framed) it.border(1.dp, c.border.copy(alpha = c.border.alpha * 0.4f), shape) else it },
             onClick = onClick,
+            onLoaded = if (measured == null) ({ decoded = it }) else null,
         )
     }
 }
