@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -87,6 +88,8 @@ class SidebarActions(
     val archive: (ThreadSummary) -> Unit = {},
     val unarchive: (ThreadSummary) -> Unit = {},
     val toggleArchived: () -> Unit = {},
+    /** Pull-to-refresh: check the connection now. */
+    val refresh: () -> Unit = {},
 )
 
 /** `DEFAULT_SIDEBAR_THREAD_PREVIEW_COUNT` (contracts settings.ts): threads a project shows before "Show more". */
@@ -120,6 +123,7 @@ fun SidebarPanel(
     val list = if (archived.open) archived.model ?: ThreadListModel() else model
     val groups = remember(list, query) { filterGroups(list.groups, query) }
     val searching = query.isNotBlank()
+    val pull = rememberPullRefresh(actions.refresh)
 
     Column(modifier.fillMaxSize().background(c.sidebar).windowInsetsPadding(WindowInsets.statusBars)) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -143,7 +147,8 @@ fun SidebarPanel(
                 )
                 list.threadCount == 0 -> SidebarNote("No archived threads.")
                 groups.isEmpty() -> SidebarNote("No thread matches “${query.trim()}”.")
-                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp)) {
+                else -> LazyColumn(Modifier.fillMaxSize().nestedScroll(pull.connection), contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp)) {
+                    item(key = "pull", contentType = "pull") { PullIndicator(pull, "check the connection") }
                     for (group in groups) {
                         val key = group.project?.id ?: "none"
                         val isCollapsed = key in collapsed && !searching
