@@ -103,7 +103,7 @@ fun ApprovalPanel(request: PendingRequest, busy: Boolean, onDecide: (String) -> 
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Txt(approvalTitle(kind), CandyType.smMedium, c.warningForeground)
                 if (subject != null) {
-                    Txt(subject, CandyType.mono, c.foreground, maxLines = 6, modifier = Modifier.heightIn(max = 140.dp).verticalScroll(rememberScrollState()))
+                    Txt(subject, CandyType.mono, c.foreground, modifier = Modifier.heightIn(max = 140.dp).verticalScroll(rememberScrollState()))
                 }
                 for (choice in choices) if (choice.warning != null) Txt(choice.warning!!, CandyType.xs, c.warningForeground)
             }
@@ -140,6 +140,9 @@ fun QuestionPanel(request: PendingRequest, busy: Boolean, onAnswer: (Map<String,
     ComposerTray {
         if (q == null) {
             Txt("The agent asked a question this app cannot show.", CandyType.sm, c.mutedForeground)
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
+                CButton("Dismiss", kind = ButtonKind.GHOST, size = ButtonSize.SM, enabled = !busy, onClick = onDismiss)
+            }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt(q.header.ifBlank { "Question" }, CandyType.xsMedium, c.mutedForeground, maxLines = 1, modifier = Modifier.weight(1f))
