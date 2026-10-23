@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -297,13 +298,13 @@ private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSinc
     LaunchedEffect(newest) {
         if (listState.firstVisibleItemIndex <= 2) listState.scrollToItem(0)
     }
-    // Reaching the oldest loaded row pages in older history.
-    LaunchedEffect(listState, state.hasMoreHistory) {
-        if (!state.hasMoreHistory) return@LaunchedEffect
+    // Reaching the oldest loaded row pages in older history. After a failure it waits for Retry.
+    val pageable by rememberUpdatedState(state.hasMoreHistory && state.olderError == null)
+    LaunchedEffect(listState) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
             .distinctUntilChanged()
             .filter { it >= listState.layoutInfo.totalItemsCount - 3 }
-            .collect { if (state.olderError == null) loadOlder() }
+            .collect { if (pageable) loadOlder() }
     }
     val scrolledUp by remember { derivedStateOf { listState.firstVisibleItemIndex > 4 } }
     val scope = rememberCoroutineScope()

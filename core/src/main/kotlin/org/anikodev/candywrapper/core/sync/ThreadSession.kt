@@ -212,7 +212,7 @@ class ThreadSession internal constructor(
     }
 
     private fun publish(phase: Phase) {
-        val next = synchronized(lock) {
+        synchronized(lock) {
             // List keys must be unique; drop a repeated id rather than crash the view.
             val seen = HashSet<String>()
             val rows = projection.rows().filter { seen.add(it.id) }
@@ -238,9 +238,13 @@ class ThreadSession internal constructor(
                 loadingOlder = prev.loadingOlder,
                 olderError = prev.olderError,
                 empty = rows.none { it.type == "user_message" },
-            )
+            ).also { _state.value = it }
         }
-        _state.value = next
+    }
+
+    /** Changes only the paging fields, under the lock so a concurrent [publish] cannot drop them. */
+    private fun setPaging(loading: Boolean, error: String?) = synchronized(lock) {
+        _state.value = _state.value.copy(loadingOlder = loading, olderError = error)
     }
 
     private fun currentPhase(): Phase = _state.value.phase.let { if (it == Phase.LOADING) Phase.CACHED else it }
@@ -295,20 +299,20 @@ class ThreadSession internal constructor(
             if (_state.value.loadingOlder) return
             projection.historyCursor
         } ?: return
-        _state.value = _state.value.copy(loadingOlder = true, olderError = null)
+        setPaging(true, null)
         val start = Timeline.nowMs()
         try {
             val page = environment.getJson("/api/orchestration/threads/$threadId/history", mapOf("cursor" to cursor))
             val applied = synchronized(lock) { projection.prependHistory(cursor, page) }
             Timeline.span("$traceName.history.page", start, if (applied) "${page["items"]?.let { (it as? kotlinx.serialization.json.JsonArray)?.size }} items" else "stale")
-            _state.value = _state.value.copy(loadingOlder = false)
+            setPaging(false, null)
             publish(currentPhase())
             save(0)
         } catch (e: kotlinx.coroutines.CancellationException) {
-            _state.value = _state.value.copy(loadingOlder = false)
+            setPaging(false, null)
             throw e
         } catch (e: Exception) {
-            _state.value = _state.value.copy(loadingOlder = false, olderError = EnvironmentSession.describe(e))
+            setPaging(false, EnvironmentSession.describe(e))
         }
     }
 
