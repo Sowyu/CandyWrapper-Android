@@ -16,12 +16,16 @@ Use the release APK when judging speed. Debug builds run Compose without optimiz
 
 - Pair a computer by pasting the link from `npx t3 pair`, or share it to the app.
 - Sign in to T3 Connect with an email code or a password, list the linked computers and connect to them.
-- Environment list, thread list per environment grouped by project, and a read-only thread view with messages, collapsed tool calls, thinking and plans, updating live.
+- Thread lists per computer grouped by project, with search, a computer switcher, status and unread marks, rename, archive and mark read or unread.
+- A live thread view: Markdown with coloured code blocks, tool calls that expand to their output or diff, run diffs from checkpoint cards, older history as you scroll up, and timestamps.
+- A composer: send, queue or steer during a run, Stop, model and effort, access mode, plan mode and image attachments. Start a new thread in any project.
+- Approvals and agent questions answered in place of the composer, and queued messages you can steer or cancel.
+- Opening a thread marks it read on the computer.
 - The thread list and recently opened threads are stored on the phone, so the app opens to them before any network.
-- Light and dark themes from CandyWrapper's design tokens.
+- Light and dark themes from CandyWrapper's design tokens, following the system or set in Settings.
 - A Timing screen with every startup, connect and thread-open step in milliseconds, also logged to logcat with tag `CWTiming`.
 
-Not built yet: sending messages, approvals, diffs, terminal, HTML renders, and settings beyond connections and timing.
+Not built yet: terminal, HTML renders, file mentions and slash commands, editing queued messages, and the full set of thread actions (pin, snooze, settle, fork).
 
 ## Build
 

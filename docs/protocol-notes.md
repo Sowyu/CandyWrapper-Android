@@ -8,7 +8,12 @@ Choices this client makes on the wire, and the questions still open. The contrac
 - Token exchange: `client_device_type=mobile`, `client_os=Android`, and a label like "CandyWrapper on Pixel 8" (4.3).
 - The relay client id is `t3-web`, as CandyWrapper for macOS uses with the user's approval (10.1, decisions 2026-10-09).
 - First requests on a new socket: `orchestration.subscribeShell` with `requestCompletionMarker` and the cached `afterSequence`, one `orchestration.subscribeThread` per open thread with `acceptBoundedSnapshot` and `acceptCompactTurnItems`, and `server.getConfig` for `directEndpoints` (2.1, 7.6, 7.7).
-- The client never sends a command. It does not send `thread.visit`, so reading a thread on the phone does not mark it read on the computer.
+- Commands go through `orchestration.dispatchCommand` with a fresh UUID `commandId` per action and `creationSource: "mobile"`, as T3's own phone app sends (7.2, 7.3). They are built in `core/sync/Commands.kt`, one function per command, each checked against the contract in `ComposerTest`. Nothing is replayed after a reconnect (8.8).
+- A message sent during a run: with the environment capability `serverResolvedCommandContext`, `start_immediately` plus `deliveryIntent: "auto"` (or `"steer"`), and the server decides; on older servers `queue_after_active` unless the user picked Steer. Long-press Send offers Queue and Steer.
+- Stop sends `run.interrupt` with `holdQueue: true` for the newest run that is preparing, starting or running (8.5).
+- `thread.visit` carries the shell's `updatedAt`: at once when the thread has an unseen completion, else after 10 s with no change, only while the thread is open and the socket live (7.9).
+- A new thread is `thread.create` (title "New thread", the picked model, access and mode, no branch or worktree), then `message.dispatch` with a `titleSeed` from the first line, as recorded in `02-turn`.
+- Images go up through `attachments.createUploadUrl` and a POST of the bytes to the signed path, then ride in `message.dispatch.attachments` (5.3). The phone sends at most six images of 10 MB each and does not resize them.
 
 ## Direct and relay routes
 
@@ -22,5 +27,7 @@ The first connect to a T3 Connect computer always goes through the tunnel, becau
 2. Whether `t3-mobile` would be the more accurate relay client id. It may also request `mobile:registration`, which this app has no use for.
 3. Whether the server should see `clientSurface=mobile` from a third-party app. The parameters are attribution only (2.2).
 4. Whether reusing a ticket across connects inside its five minutes stays allowed. Today the server verifies tickets and does not consume them (4.4); if that changes, the cached ticket fails with HTTP 401 and the client mints a new one.
-5. History paging. The thread view shows the bounded window the server sends (the last 10 user turns). Older pages from `/api/orchestration/threads/:id/history` are not loaded yet.
+5. History paging. Older pages come from `GET /api/orchestration/threads/:id/history?cursor=` with the environment credential and `x-t3-orchestration-protocol: 2`, on the route the socket uses. A page answered for a cursor that has since changed is dropped (7.7). Pages merge into the cache, but a later snapshot replaces them.
 6. The superseded-attempt visibility rule for `run_interrupt_result` is not applied (7.8), because run attempts are not kept.
+7. `getTurnDiff` units. The diff of a run uses its checkpoint's `appRunOrdinal`: `getFullThreadDiff` for the first run, else `getTurnDiff` from the run before, as CandyWrapper's `TurnDiffs.request` does. A checkpoint the bounded snapshot left out has no ordinal, so its card has no Open diff.
+8. Older servers that do not resolve delivery get `queue_after_active` during a run even when the provider could steer. Reading `providerSessions[].capabilities.turns` would fix that if it matters.
