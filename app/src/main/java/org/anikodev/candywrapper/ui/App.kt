@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -176,20 +177,19 @@ private fun SidebarHost(
 
     fun closeOnPhone() { scope.launch { drawer.close() } }
 
-    SidebarPanel(
-        current = current,
-        environments = environments,
-        model = model,
-        activeThreadId = main.threadId.takeIf { main.envId == session.id },
-        now = now,
-        archived = archived,
-        actions = SidebarActions(
+    // One actions object per environment, so thread rows keep equal lambdas and skip recomposing
+    // when the list updates. What changes between updates is read through these states.
+    val mainNow by rememberUpdatedState(main)
+    val actNow by rememberUpdatedState(act)
+    val renameNow by rememberUpdatedState(onRename)
+    val actions = remember(session.id, nav, drawer) {
+        SidebarActions(
             openThread = { t ->
                 Timeline.mark("thread.tap", t.id.take(8))
                 nav.reset(Screen.Main(session.id, t.id))
                 closeOnPhone()
             },
-            newThread = { pid -> nav.reset(Screen.Main(session.id, main.threadId)); nav.push(Screen.NewThread(session.id, pid)); closeOnPhone() },
+            newThread = { pid -> nav.reset(Screen.Main(session.id, mainNow.threadId)); nav.push(Screen.NewThread(session.id, pid)); closeOnPhone() },
             switchEnvironment = { id -> if (id != session.id) nav.reset(Screen.Main(id, null)) },
             pair = { nav.push(Screen.Pair()); closeOnPhone() },
             connect = { nav.push(Screen.Connect); closeOnPhone() },
@@ -202,18 +202,18 @@ private fun SidebarHost(
                     else -> session.wake()
                 }
             },
-            rename = { t -> onRename(session.id, t) },
+            rename = { t -> renameNow(session.id, t) },
             toggleRead = { t ->
-                act(session) {
+                actNow(session) {
                     session.dispatch(if (t.unread) Commands.visit(t.id, t.updatedAt.takeIf { it > 0 } ?: System.currentTimeMillis()) else Commands.markUnread(t.id))
                 }
             },
             archive = { t ->
-                act(session) { session.dispatch(Commands.archive(t.id)) }
-                if (t.id == main.threadId) nav.reset(Screen.Main(session.id, null))
+                actNow(session) { session.dispatch(Commands.archive(t.id)) }
+                if (t.id == mainNow.threadId) nav.reset(Screen.Main(session.id, null))
             },
             unarchive = { t ->
-                act(session) {
+                actNow(session) {
                     session.dispatch(Commands.unarchive(t.id))
                     archived = archived.copy(model = archived.model?.let { m ->
                         ThreadListModel.build(m.groups.mapNotNull { it.project }.associateBy { it.id }, m.groups.flatMap { g -> g.threads.filter { it.id != t.id } })
@@ -224,7 +224,17 @@ private fun SidebarHost(
                 archived = if (archived.open) ArchivedList() else ArchivedList(open = true)
                 if (archived.open) archivedLoads++
             },
-        ),
+        )
+    }
+
+    SidebarPanel(
+        current = current,
+        environments = environments,
+        model = model,
+        activeThreadId = main.threadId.takeIf { main.envId == session.id },
+        now = now,
+        archived = archived,
+        actions = actions,
     )
 }
 
