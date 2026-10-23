@@ -8,16 +8,19 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -31,8 +34,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -42,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
@@ -63,16 +67,12 @@ import org.anikodev.candywrapper.core.sync.ToolGroup
 import org.anikodev.candywrapper.core.sync.UploadedAttachment
 import org.anikodev.candywrapper.core.timing.Timeline
 
-private sealed interface ThreadSheet {
-    data object Actions : ThreadSheet
-    data object Rename : ThreadSheet
-    data object SendOptions : ThreadSheet
-    data class Pick(val picker: Picker) : ThreadSheet
-}
-
 /** The most images one message takes from the picker; T3's limit is 100, a phone needs fewer. */
 private const val MAX_PICKS = 6
 private const val MAX_IMAGE_BYTES = 10L * 1024 * 1024
+
+/** T3's `--chat-content-max-width` (46rem): the lane messages and the composer keep to on a wide screen. */
+val ChatLaneWidth = 736.dp
 
 /** Picked images, uploaded on send (protocol.md 5.3). */
 suspend fun uploadAll(context: android.content.Context, session: EnvironmentSession, files: List<PickedFile>, progress: (String) -> Unit): List<UploadedAttachment> =
@@ -87,7 +87,7 @@ suspend fun uploadAll(context: android.content.Context, session: EnvironmentSess
 fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: String) {
     val session = graph.environments.session(envId)
     if (session == null) {
-        LaunchedEffect(Unit) { nav.pop() }
+        LaunchedEffect(Unit) { nav.reset(Screen.Main(null, null)) }
         return
     }
     val thread = remember(envId, threadId) { session.thread(threadId) }
@@ -103,12 +103,11 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
         shell.groups.firstNotNullOfOrNull { g -> g.threads.firstOrNull { it.id == threadId }?.let { it to g.project } } ?: (null to null)
     }
     val now = rememberMinuteClock()
-    val c = Candy.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val live = connection is ConnectionState.Live
 
-    var sheet by remember { mutableStateOf<ThreadSheet?>(null) }
+    var renaming by remember { mutableStateOf(false) }
     var draft by rememberSaveable(threadId) { mutableStateOf("") }
     val files = remember(threadId) { mutableStateListOf<PickedFile>() }
     var busy by remember { mutableStateOf<String?>(null) }
@@ -116,7 +115,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
     val expanded = remember(threadId) { mutableStateMapOf<String, Boolean>() }
     val details = remember(threadId) { mutableStateMapOf<String, ItemDetail>() }
     val host = remember(thread) {
-        TimelineHost(thread, expanded, details) { checkpointId, title -> nav.push(Screen.Diff(envId, threadId, checkpointId, title)) }
+        TimelineHost.forThread(thread, expanded, details) { checkpointId, title -> nav.push(Screen.Diff(envId, threadId, checkpointId, title)) }
     }
 
     fun act(label: String?, block: suspend () -> Unit) {
@@ -186,109 +185,150 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
         !live && state.items.isNotEmpty() -> "Saved copy · ${connection.label()}"
         !live -> connection.label()
         slowSync -> "Catching up"
-        else -> project?.title
+        else -> null
     }
+    val settings = ComposerSettings(state.meta.model, state.meta.runtimeMode, state.meta.interactionMode)
+    val provider = state.meta.model?.instanceId?.let(server::provider)
 
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().windowInsetsPadding(BottomInsets)) {
-            val shell = LocalShell.current
-            TopBar(
-                state.title ?: summary?.title ?: "Thread", subtitle = subtitle,
-                leading = if (!shell.wide) ({ IconButton(Icons.PanelLeft, "Open the sidebar", tint = c.foreground, onClick = shell.openSidebar) }) else null,
-                subtitleColor = if (!live && state.items.isEmpty()) c.errorForeground else c.mutedForeground,
-                onTitleClick = { sheet = ThreadSheet.Actions },
-            ) {
-                IconButton(Icons.Ellipsis, "Thread actions") { sheet = ThreadSheet.Actions }
-            }
-            Box(Modifier.weight(1f)) {
-                if (state.items.isEmpty()) {
-                    Column(Modifier.fillMaxSize().padding(16.dp)) {
-                        when {
-                            state.phase == ThreadSession.Phase.LOADING && !slowSync -> Unit
-                            live -> Txt("Loading the thread", CandyType.ui, c.mutedForeground)
-                            else -> Notice("This thread is not saved on the phone yet. It loads when the computer answers.", c.foreground, c.muted,
-                                action = "Retry") { session.wake() }
-                        }
-                    }
-                } else {
-                    Timeline(state, host, summary?.workingSince ?: 0, now, summary?.pill == StatusPill.WORKING) { scope.launch { thread.loadOlder() } }
+        ThreadView(
+            title = state.title ?: summary?.title ?: "Thread",
+            project = project?.title,
+            subtitle = subtitle,
+            subtitleError = !live && state.items.isEmpty(),
+            state = state,
+            host = host,
+            workingSince = summary?.workingSince ?: 0,
+            now = now,
+            working = summary?.pill == StatusPill.WORKING,
+            onLoadOlder = { scope.launch { thread.loadOlder() } },
+            empty = {
+                when {
+                    state.phase == ThreadSession.Phase.LOADING && !slowSync -> Unit
+                    live -> Txt("Loading the thread", CandyType.sm, Candy.colors.mutedForeground)
+                    else -> Alert("This thread is not saved on the phone yet. It loads when the computer answers.", NoticeTone.NEUTRAL, action = "Retry") { session.wake() }
                 }
-            }
+            },
+            menu = { close ->
+                MenuItem("Rename thread", Icons.Pencil, enabled = live) { close(); renaming = true }
+                MenuItem("Refresh", Icons.RefreshCw, detail = "Subscribe again from the last event seen") { close(); thread.resubscribe() }
+                if (summary?.unread == false && summary.pill == StatusPill.READY) {
+                    MenuItem("Mark unread", Icons.EyeOff, enabled = live) {
+                        close()
+                        act(null) { session.dispatch(Commands.markUnread(threadId)); nav.reset(Screen.Main(envId, null)) }
+                    }
+                }
+                MenuSeparator()
+                MenuItem("Archive", Icons.Archive, enabled = live && summary?.pill != StatusPill.WORKING) {
+                    close()
+                    act(null) { session.dispatch(Commands.archive(threadId)); nav.reset(Screen.Main(envId, null)) }
+                }
+            },
+        ) {
             val pending = state.pending.firstOrNull()
+            if (state.phase == ThreadSession.Phase.DELETED) return@ThreadView
             when {
-                state.phase == ThreadSession.Phase.DELETED -> Unit
                 pending != null && pending.isQuestion -> QuestionPanel(pending, busy != null || !live,
                     onAnswer = { answers -> act(null) { thread.answer(pending.requestId, answers) } },
                     onDismiss = { act(null) { thread.dismissQuestion(pending.requestId) } })
                 pending != null -> ApprovalPanel(pending, busy != null || !live) { decision -> act(null) { thread.approve(pending.requestId, decision) } }
-                else -> {
-                    if (state.queued.isNotEmpty()) {
-                        QueuedList(state.queued, canSteer = state.stoppableRunId != null,
-                            onSteer = { runId -> act(null) { thread.steerQueued(runId) } },
-                            onCancel = { runId -> act(null) { thread.cancelQueued(runId) } })
-                    }
-                    val provider = state.meta.model?.instanceId?.let(server::provider)
-                    Composer(
-                        text = draft, onText = { draft = it },
-                        settings = ComposerSettings(state.meta.model, state.meta.runtimeMode, state.meta.interactionMode),
-                        server = server,
-                        running = state.running,
-                        canStop = state.stoppableRunId != null,
-                        files = files,
-                        busy = busy?.takeIf { it.isNotEmpty() },
-                        error = error,
-                        connected = live,
-                        onPicker = { sheet = ThreadSheet.Pick(it) },
-                        onTogglePlan = if (provider?.showInteractionModeToggle != false) {
-                            { act(null) { thread.setInteractionMode(if (state.meta.interactionMode == "plan") "default" else "plan") } }
-                        } else null,
-                        onAttach = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                        onRemoveFile = { files.remove(it) },
-                        onSend = { send(Delivery.AUTO) },
-                        onSendOptions = if (state.running) ({ sheet = ThreadSheet.SendOptions }) else null,
-                        onStop = { act("Stopping") { thread.stop() } },
-                        onDismissError = { error = null },
-                    )
-                }
+                state.queued.isNotEmpty() -> QueuedList(state.queued, canSteer = state.stoppableRunId != null,
+                    onSteer = { runId -> act(null) { thread.steerQueued(runId) } },
+                    onCancel = { runId -> act(null) { thread.cancelQueued(runId) } })
             }
-        }
-
-        when (val s = sheet) {
-            ThreadSheet.Actions -> Sheet({ sheet = null }, state.title ?: summary?.title) {
-                ListRow("Rename", icon = Icons.Pencil, enabled = live) { sheet = ThreadSheet.Rename }
-                ListRow("Refresh", icon = Icons.RefreshCw, detail = "Subscribe again from the last event seen") { sheet = null; thread.resubscribe() }
-                if (summary?.unread == false && summary.pill == StatusPill.READY) {
-                    ListRow("Mark as unread", icon = Icons.Eye, enabled = live) {
-                        sheet = null
-                        act(null) { session.dispatch(Commands.markUnread(threadId)); nav.reset(Screen.Main(envId, null)) }
-                    }
-                }
-                ListRow("Archive", icon = Icons.Archive, enabled = live) {
-                    sheet = null
-                    act(null) { session.dispatch(Commands.archive(threadId)); nav.reset(Screen.Main(envId, null)) }
-                }
-            }
-            ThreadSheet.Rename -> RenameSheet(state.title ?: summary?.title.orEmpty(), onDismiss = { sheet = null }) { title ->
-                sheet = null
-                act(null) { thread.rename(title) }
-            }
-            ThreadSheet.SendOptions -> Sheet({ sheet = null }, "Send during this run") {
-                ListRow("Queue after this run", icon = Icons.Clock, detail = "Starts when the current run finishes") { sheet = null; send(Delivery.QUEUE) }
-                ListRow("Steer now", icon = Icons.Zap, detail = "Redirects the run that is going") { sheet = null; send(Delivery.STEER) }
-            }
-            is ThreadSheet.Pick -> ComposerPickerSheet(
-                s.picker, server, ComposerSettings(state.meta.model, state.meta.runtimeMode, state.meta.interactionMode),
+            Composer(
+                text = draft, onText = { draft = it },
+                settings = settings,
+                server = server,
+                running = state.running,
+                canStop = state.stoppableRunId != null,
+                files = files,
+                busy = busy?.takeIf { it.isNotEmpty() },
+                error = error,
+                connected = live,
                 onModel = { m -> act(null) { thread.setModel(m) } },
                 onRuntimeMode = { m -> act(null) { thread.setRuntimeMode(m) } },
-                onDismiss = { sheet = null },
+                onTogglePlan = if (provider?.showInteractionModeToggle != false) {
+                    { act(null) { thread.setInteractionMode(if (state.meta.interactionMode == "plan") "default" else "plan") } }
+                } else null,
+                onAttach = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onRemoveFile = { files.remove(it) },
+                onSend = { send(Delivery.AUTO) },
+                onQueue = if (state.running) ({ send(Delivery.QUEUE) }) else null,
+                onSteer = if (state.running) ({ send(Delivery.STEER) }) else null,
+                onStop = { act("Stopping") { thread.stop() } },
+                onDismissError = { error = null },
+                locked = when {
+                    pending?.isQuestion == true -> "Answer the question above to continue"
+                    pending != null -> APPROVAL_LOCK
+                    else -> null
+                },
+                trayAbove = pending != null || state.queued.isNotEmpty(),
             )
-            null -> Unit
+        }
+        if (renaming) {
+            RenameSheet(state.title ?: summary?.title.orEmpty(), onDismiss = { renaming = false }) { title ->
+                renaming = false
+                act(null) { thread.rename(title) }
+            }
+        }
+    }
+}
+
+/**
+ * The thread as T3's chat view draws it, from plain state so the screenshot tests can show it:
+ * the header with the sidebar button, project monogram, title and the ⋯ menu; the timeline in
+ * T3's 46rem lane; and [bottom], the trays and the composer.
+ */
+@Composable
+fun ThreadView(
+    title: String,
+    project: String?,
+    subtitle: String?,
+    subtitleError: Boolean,
+    state: ThreadSession.State,
+    host: TimelineHost,
+    workingSince: Long,
+    now: Long,
+    working: Boolean,
+    onLoadOlder: () -> Unit,
+    empty: @Composable () -> Unit = {},
+    menu: @Composable ColumnScope.(close: () -> Unit) -> Unit = {},
+    menuOpen: Boolean = false,
+    bottom: @Composable ColumnScope.() -> Unit,
+) {
+    val c = Candy.colors
+    val shell = LocalShell.current
+    var actions by remember { mutableStateOf(menuOpen) }
+    Column(Modifier.fillMaxSize().background(c.background).windowInsetsPadding(BottomInsets)) {
+        TopBar(
+            title, subtitle = subtitle,
+            subtitleColor = if (subtitleError) c.errorForeground else c.mutedForeground,
+            leading = if (!shell.wide) ({ IconButton(Icons.PanelLeft, "Open the sidebar", tint = c.foreground, onClick = shell.openSidebar) }) else null,
+            titleLead = project?.let { p -> { Monogram(p) } },
+            onTitleClick = { actions = true },
+        ) {
+            Box {
+                IconButton(Icons.Ellipsis, "Thread actions", tint = c.foreground) { actions = true }
+                Menu(actions, { actions = false }, alignEnd = true, minWidth = 220.dp) { menu { actions = false } }
+            }
+        }
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val side = maxOf(16.dp, (maxWidth - ChatLaneWidth) / 2)
+            if (state.items.isEmpty()) {
+                Column(Modifier.fillMaxSize().padding(horizontal = side, vertical = 16.dp)) { empty() }
+            } else {
+                Timeline(state, host, workingSince, now, working, side, onLoadOlder)
+            }
+        }
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+            Column(Modifier.widthIn(max = ChatLaneWidth + 24.dp).fillMaxWidth(), content = bottom)
         }
     }
 }
 
 @Composable
-private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSince: Long, now: Long, working: Boolean, loadOlder: () -> Unit) {
+private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSince: Long, now: Long, working: Boolean, side: Dp, loadOlder: () -> Unit) {
     val c = Candy.colors
     val listState = rememberLazyListState()
     // Newest at the bottom with no scroll work: the list is reversed and laid out from the end.
@@ -316,39 +356,41 @@ private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSinc
             Modifier.fillMaxSize(),
             state = listState,
             reverseLayout = true,
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(start = side, end = side, top = 8.dp, bottom = 16.dp),
         ) {
             if (showWorking) item(key = "working", contentType = "working") { WorkingRow(workingSince, now, state.queued.size) }
             items(reversed, key = { it.key }, contentType = { contentType(it) }) { item ->
-                when (item) {
-                    is ToolGroup -> ToolGroupView(item, host)
-                    is TimelineRow -> RowView(item, host)
+                Box(Modifier.padding(top = rowGap(item).dp)) {
+                    when (item) {
+                        is ToolGroup -> ToolGroupView(item, host)
+                        is TimelineRow -> RowView(item, host)
+                    }
                 }
             }
             if (state.hasMoreHistory || state.olderError != null) {
                 item(key = "older", contentType = "older") {
                     Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
                         when {
-                            state.loadingOlder -> Txt("Loading earlier messages", CandyType.meta, c.mutedForeground)
-                            state.olderError != null -> Notice("Could not load earlier messages: ${state.olderError}", c.foreground, c.muted, action = "Retry", onAction = loadOlder)
-                            else -> CButton("Load earlier messages", kind = ButtonKind.GHOST, onClick = loadOlder)
+                            state.loadingOlder -> Txt("Loading earlier messages", CandyType.xs, c.mutedForeground)
+                            state.olderError != null -> Alert("Could not load earlier messages: ${state.olderError}", NoticeTone.NEUTRAL, action = "Retry", onAction = loadOlder)
+                            else -> CButton("Load earlier messages", kind = ButtonKind.GHOST, size = ButtonSize.SM, onClick = loadOlder)
                         }
                     }
                 }
             }
         }
         if (scrolledUp) {
+            // T3's scroll-to-bottom pill.
             Row(
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp).clip(RoundedCornerShape(Radius.lg)).background(c.card)
-                    .border(1.dp, c.border, RoundedCornerShape(Radius.lg))
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp).clip(RoundedCornerShape(50)).background(c.popover)
+                    .border(1.dp, c.border, RoundedCornerShape(50))
                     .clickable(role = Role.Button, onClickLabel = "Jump to the newest message") { scope.launch { listState.scrollToItem(0) } }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.ChevronDown, c.foreground, 15.dp)
+                Icon(Icons.ArrowDown, c.foreground, 14.dp)
                 Spacer(Modifier.width(6.dp))
-                Txt("Newest", CandyType.small, c.foreground)
+                Txt("Scroll to bottom", CandyType.xs, c.foreground)
             }
         }
     }
@@ -360,8 +402,9 @@ private fun contentType(item: TimelineItem): Any = when (item) {
 }
 
 /**
- * A draft for a new thread in one project. The first send creates the thread with the picked
- * model and modes (`thread.create`, then `message.dispatch` with a title seed), then opens it.
+ * A draft for a new thread in one project (T3's new-thread draft, 04-new-thread-draft). The first
+ * send creates the thread with the picked model and modes (`thread.create`, then
+ * `message.dispatch` with a title seed), then opens it.
  */
 @Composable
 fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: String) {
@@ -385,67 +428,67 @@ fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: S
     val files = remember { mutableStateListOf<PickedFile>() }
     var busy by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var picker by remember { mutableStateOf<Picker?>(null) }
     LaunchedEffect(server) { if (model == null) model = server.modelForNewThread(null) }
     val settings = ComposerSettings(model, runtimeMode ?: server.defaultRuntimeMode, interactionMode)
     val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICKS)) { uris ->
         for (uri in uris) if (files.size < MAX_PICKS) describePick(context, uri)?.let { if (files.none { f -> f.uri == uri }) files += it }
     }
 
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().windowInsetsPadding(BottomInsets)) {
-            TopBar("New thread", onBack = { nav.pop() }, subtitle = if (live) project?.title else connection.label())
-            Column(Modifier.weight(1f).padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Monogram(project?.title ?: "?")
-                    Spacer(Modifier.width(10.dp))
-                    Txt(project?.title ?: "Project", CandyType.uiMedium, c.mutedForeground)
-                }
-                Spacer(Modifier.height(10.dp))
-                Txt("What should we work on?", CandyType.heading, c.foreground)
-                if (project?.workspaceRoot?.isNotBlank() == true) {
-                    Spacer(Modifier.height(6.dp))
-                    Txt(project.workspaceRoot, CandyType.monoSmall, c.mutedForeground, maxLines = 2)
-                }
+    Column(Modifier.fillMaxSize().background(c.background).windowInsetsPadding(BottomInsets)) {
+        TopBar("New thread", onBack = { nav.pop() }, subtitle = if (live) null else connection.label(), titleLead = project?.title?.let { p -> { Monogram(p) } })
+        Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Monogram(project?.title ?: "?", size = 20.dp)
+                Spacer(Modifier.width(8.dp))
+                Txt(project?.title ?: "Project", CandyType.smMedium, c.mutedForeground)
             }
-            Composer(
-                text = draft, onText = { draft = it }, settings = settings, server = server,
-                running = false, canStop = false, files = files, busy = busy, error = error, connected = live && model != null,
-                onPicker = { picker = it },
-                onTogglePlan = { interactionMode = if (interactionMode == "plan") "default" else "plan" },
-                onAttach = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                onRemoveFile = { files.remove(it) },
-                onSend = {
-                    val m = model ?: return@Composer
-                    val text = draft.trim()
-                    busy = "Starting"
-                    error = null
-                    scope.launch {
-                        try {
-                            val uploaded = uploadAll(context, session, files.toList()) { busy = it }
-                            busy = "Starting"
-                            val threadId = Commands.newId()
-                            session.dispatch(Commands.createThread(threadId, projectId, "New thread", m, settings.runtimeMode, settings.interactionMode))
-                            session.dispatch(Commands.sendMessage(threadId, text, uploaded,
-                                titleSeed = text.lineSequence().firstOrNull { it.isNotBlank() }?.take(80)))
-                            Timeline.mark("thread.created", threadId.take(8))
-                            nav.reset(Screen.Main(envId, threadId))
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            error = EnvironmentSession.describe(e)
-                        } finally {
-                            busy = null
-                        }
-                    }
-                },
-                onSendOptions = null,
-                onStop = {},
-                onDismissError = { error = null },
-            )
+            Spacer(Modifier.height(12.dp))
+            Txt("What should we work on?", CandyType.xxl, c.foreground)
+            if (project?.workspaceRoot?.isNotBlank() == true) {
+                Spacer(Modifier.height(6.dp))
+                Txt(project.workspaceRoot, CandyType.monoSmall, c.mutedForeground, maxLines = 2)
+            }
         }
-        picker?.let { p ->
-            ComposerPickerSheet(p, server, settings, onModel = { model = it }, onRuntimeMode = { runtimeMode = it }, onDismiss = { picker = null })
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+            Box(Modifier.widthIn(max = ChatLaneWidth + 24.dp).fillMaxWidth()) {
+                Composer(
+                    text = draft, onText = { draft = it }, settings = settings, server = server,
+                    running = false, canStop = false, files = files, busy = busy, error = error, connected = live && model != null,
+                    onModel = { model = it },
+                    onRuntimeMode = { runtimeMode = it },
+                    onTogglePlan = { interactionMode = if (interactionMode == "plan") "default" else "plan" },
+                    onAttach = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onRemoveFile = { files.remove(it) },
+                    onSend = {
+                        val m = model ?: return@Composer
+                        val text = draft.trim()
+                        busy = "Starting"
+                        error = null
+                        scope.launch {
+                            try {
+                                val uploaded = uploadAll(context, session, files.toList()) { busy = it }
+                                busy = "Starting"
+                                val threadId = Commands.newId()
+                                session.dispatch(Commands.createThread(threadId, projectId, "New thread", m, settings.runtimeMode, settings.interactionMode))
+                                session.dispatch(Commands.sendMessage(threadId, text, uploaded,
+                                    titleSeed = text.lineSequence().firstOrNull { it.isNotBlank() }?.take(80)))
+                                Timeline.mark("thread.created", threadId.take(8))
+                                nav.reset(Screen.Main(envId, threadId))
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                error = EnvironmentSession.describe(e)
+                            } finally {
+                                busy = null
+                            }
+                        }
+                    },
+                    onQueue = null,
+                    onSteer = null,
+                    onStop = {},
+                    onDismissError = { error = null },
+                )
+            }
         }
     }
 }

@@ -157,7 +157,10 @@ private fun PhoneShell(drawer: DrawerState, windowWidth: Dp, sidebar: @Composabl
                                 }
                                 .background(c.sidebar)
                                 .draggable(drag, Orientation.Horizontal, onDragStopped = { v -> drawer.settle(v) }),
-                        ) { sidebar() }
+                        ) {
+                            sidebar()
+                            Box(Modifier.align(Alignment.CenterEnd).width(1.dp).fillMaxHeight().background(c.sidebarBorder))
+                        }
                     },
                 ) { measurables, constraints ->
                     val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0)) }

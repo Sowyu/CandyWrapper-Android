@@ -275,6 +275,8 @@ fun SelectChip(
     enabled: Boolean = true,
     open: Boolean = false,
     showLabel: Boolean = true,
+    labelMax: Dp = 160.dp,
+    chevron: Boolean = true,
     onClick: () -> Unit,
 ) {
     val c = Candy.colors
@@ -288,8 +290,8 @@ fun SelectChip(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (icon != null) Icon(icon, iconTint, 16.dp)
-            if (showLabel) Txt(label, CandyType.sm, if (!enabled) c.mutedForeground.copy(alpha = 0.64f) else if (open) c.foreground else c.mutedForeground, maxLines = 1, modifier = Modifier.widthIn(max = 160.dp))
-            Icon(Icons.ChevronDown, c.mutedForeground.copy(alpha = 0.8f), 14.dp)
+            if (showLabel) Txt(label, CandyType.sm, if (!enabled) c.mutedForeground.copy(alpha = 0.64f) else if (open) c.foreground else c.mutedForeground, maxLines = 1, modifier = Modifier.widthIn(max = labelMax))
+            if (chevron) Icon(Icons.ChevronDown, c.mutedForeground.copy(alpha = 0.8f), 14.dp)
         }
     }
 }
