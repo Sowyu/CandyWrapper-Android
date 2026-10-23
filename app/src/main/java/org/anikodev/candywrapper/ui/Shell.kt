@@ -60,12 +60,24 @@ class DrawerState(open: Boolean) {
     val visible: Boolean get() = fraction.value > 0f
     val isOpen: Boolean get() = fraction.targetValue == 1f
 
-    suspend fun open() = fraction.animateTo(1f, Motion.sheet())
-    suspend fun close() = fraction.animateTo(0f, Motion.sheet())
-    internal suspend fun dragBy(px: Float, widthPx: Float) = fraction.snapTo((fraction.value + px / widthPx).coerceIn(0f, 1f))
+    // Finger moves reach [dragBy] through launched coroutines, so one can run after the release.
+    // Its snapTo would cancel the settle animation and leave the panel stuck part way; moves are
+    // only applied between [beginDrag] and the next settle, open or close.
+    private var dragging = false
+
+    suspend fun open() { dragging = false; fraction.animateTo(1f, Motion.sheet()) }
+    suspend fun close() { dragging = false; fraction.animateTo(0f, Motion.sheet()) }
+
+    /** Call synchronously from the gesture, before launching its moves. */
+    internal fun beginDrag() { dragging = true }
+
+    internal suspend fun dragBy(px: Float, widthPx: Float) {
+        if (dragging) fraction.snapTo((fraction.value + px / widthPx).coerceIn(0f, 1f))
+    }
 
     /** A fling past 400 px/s goes its way; a slow release settles on the nearer side. */
     internal suspend fun settle(velocity: Float) {
+        dragging = false
         val open = when {
             velocity > 400f -> true
             velocity < -400f -> false
@@ -120,7 +132,10 @@ private fun PhoneShell(drawer: DrawerState, windowWidth: Dp, sidebar: @Composabl
     val widthPx = with(LocalDensity.current) { panelWidth.toPx() }
     val exclusionHalf = with(LocalDensity.current) { 100.dp.toPx() }
     val edgePx = with(LocalDensity.current) { 24.dp.toPx() }
-    val drag = rememberDraggableState { delta -> scope.launch { drawer.dragBy(delta, widthPx) } }
+    val drag = rememberDraggableState { delta ->
+        drawer.beginDrag()
+        scope.launch { drawer.dragBy(delta, widthPx) }
+    }
     val showing by remember { derivedStateOf { drawer.visible } }
     var warm by remember { mutableStateOf(drawer.isOpen) }
     LaunchedEffect(Unit) {
@@ -200,7 +215,10 @@ private fun Modifier.edgeSwipe(edgePx: Float, widthPx: Float, drawer: DrawerStat
                 val dx = change.position.x - down.position.x
                 val dy = change.position.y - down.position.y
                 if (!dragging) {
-                    if (dx > viewConfiguration.touchSlop && abs(dx) > abs(dy)) dragging = true
+                    if (dx > viewConfiguration.touchSlop && abs(dx) > abs(dy)) {
+                        dragging = true
+                        drawer.beginDrag()
+                    }
                     else if (abs(dy) > viewConfiguration.touchSlop || dx < -viewConfiguration.touchSlop) break
                 }
                 if (dragging) {
