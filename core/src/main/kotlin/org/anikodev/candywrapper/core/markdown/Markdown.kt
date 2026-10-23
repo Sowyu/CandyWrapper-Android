@@ -10,7 +10,8 @@ package org.anikodev.candywrapper.core.markdown
 sealed interface MdBlock {
     data class Paragraph(val spans: List<MdSpan>) : MdBlock
     data class Heading(val level: Int, val spans: List<MdSpan>) : MdBlock
-    data class Code(val language: String?, val code: String) : MdBlock
+    /** [tokens] colour the code; they are computed with the parse, off the main thread. */
+    data class Code(val language: String?, val code: String, val tokens: List<CodeToken> = emptyList()) : MdBlock
     data class Quote(val blocks: List<MdBlock>) : MdBlock
     data class ListBlock(val ordered: Boolean, val start: Int, val items: List<ListItem>) : MdBlock
     data class Table(val header: List<List<MdSpan>>, val rows: List<List<List<MdSpan>>>) : MdBlock
@@ -52,7 +53,9 @@ object Markdown {
                 i++
                 while (i < lines.size && !isClosingFence(lines[i], marker)) body += lines[i++]
                 i++
-                out += MdBlock.Code(f.groupValues[2].ifBlank { null }, body.joinToString("\n"))
+                val language = f.groupValues[2].ifBlank { null }
+                val code = body.joinToString("\n")
+                out += MdBlock.Code(language, code, Highlighter.tokens(language, code))
                 continue
             }
             val h = heading.matchEntire(line)

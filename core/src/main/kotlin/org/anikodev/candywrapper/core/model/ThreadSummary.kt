@@ -30,6 +30,10 @@ data class ThreadSummary(
     val activityAt: Long,
     /** `activityRunStartedAt` while working, for the "working 3m" label. */
     val workingSince: Long,
+    /** `updatedAt`, the watermark `thread.visit` sends (protocol.md 7.9 Unread). */
+    val updatedAt: Long = 0,
+    /** `lastVisitedAt`, 0 when never visited or the server predates visit tracking. */
+    val visitedAt: Long = 0,
 ) {
     companion object {
         /**
@@ -74,6 +78,8 @@ data class ThreadSummary(
                 sortTime = sortTime,
                 activityAt = if (latestUser > 0) latestUser else updatedAt,
                 workingSince = if (pill == StatusPill.WORKING) time(o.str("activityRunStartedAt")) else 0,
+                updatedAt = updatedAt,
+                visitedAt = time(o.str("lastVisitedAt")),
             )
         }
 
