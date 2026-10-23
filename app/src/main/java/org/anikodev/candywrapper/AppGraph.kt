@@ -28,6 +28,7 @@ import org.anikodev.candywrapper.data.CacheDb
 import org.anikodev.candywrapper.data.KeystoreDPoPKey
 import org.anikodev.candywrapper.data.LazyDPoPKey
 import org.anikodev.candywrapper.data.SecretBox
+import org.anikodev.candywrapper.update.Updater
 
 /**
  * Everything the app holds for the life of the process, built by hand (no DI framework).
@@ -50,6 +51,8 @@ class AppGraph(private val app: Application) {
         private set
     lateinit var environments: Environments
         private set
+
+    val updater by lazy { Updater(app, scope) }
 
     /** The environment whose threads were open last, to reopen on a cold start. */
     @Volatile var lastEnvironmentId: String? = null

@@ -21,6 +21,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.anikodev.candywrapper.AppGraph
 import org.anikodev.candywrapper.BuildConfig
 import org.anikodev.candywrapper.core.timing.Timeline
+import org.anikodev.candywrapper.update.UpdateSettingsRow
 
 /**
  * The timing marks since process start, and each environment's state, as text the user can copy
@@ -47,6 +48,7 @@ fun DiagnosticsScreen(graph: AppGraph, nav: Navigator) {
             BarAction("Clear") { Timeline.clear() }
         }
         LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 12.dp)) {
+            item(key = "update") { UpdateSettingsRow(graph.updater) }
             items(sessions, key = { "env:" + it.id }) { s ->
                 Text("${s.env.value.label}: ${s.state.value.label()}", fontSize = 12.sp, color = c.foreground, modifier = Modifier.padding(vertical = 4.dp))
             }

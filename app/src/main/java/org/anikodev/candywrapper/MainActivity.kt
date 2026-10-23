@@ -21,6 +21,9 @@ class MainActivity : ComponentActivity() {
     /** Text shared to the app (a pairing link from another app), handed to the pairing screen. */
     private var sharedText by mutableStateOf<String?>(null)
 
+    /** The update check waits for the first frame, then runs on every return to the app. */
+    private var drawn = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         Timeline.mark("activity.onCreate")
         enableEdgeToEdge()
@@ -47,6 +50,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         if (graph.readyFlow.value) graph.environments.setForeground(true)
+        if (drawn) graph.updater.onForeground()
     }
 
     override fun onStop() {
@@ -67,6 +71,8 @@ class MainActivity : ComponentActivity() {
                     view.viewTreeObserver.removeOnDrawListener(this)
                     Timeline.mark("first.frame")
                     reportFullyDrawn()
+                    drawn = true
+                    graph.updater.onForeground()
                 }
             }
         })

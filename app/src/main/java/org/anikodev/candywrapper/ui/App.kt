@@ -8,8 +8,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import org.anikodev.candywrapper.AppGraph
+import org.anikodev.candywrapper.update.UpdateBanner
 
 sealed interface Screen {
     data object Environments : Screen
@@ -54,5 +56,6 @@ fun App(graph: AppGraph, sharedText: String?, consumeShared: () -> Unit) {
             Screen.Connect -> ConnectScreen(graph, nav)
             Screen.Diagnostics -> DiagnosticsScreen(graph, nav)
         }
+        UpdateBanner(graph.updater, Modifier.align(Alignment.BottomCenter))
     }
 }
