@@ -72,6 +72,8 @@ class ThreadSession internal constructor(
     private var saveJob: Job? = null
     private var openedAtMs = 0.0
     private var reportedLive = false
+    /** Stream failures on one socket since the last good item; past [MAX_RESUBSCRIBES] it stops retrying there. */
+    private var failures = 0
 
     val held: Boolean get() = synchronized(lock) { refs > 0 }
 
@@ -125,6 +127,7 @@ class ThreadSession internal constructor(
                 put("acceptBoundedSnapshot", true)
                 put("acceptCompactTurnItems", true)
             }
+            if (subscribedOn !== connection) failures = 0
             subscribedOn = connection
             subscription = connection.subscribe("orchestration.subscribeThread", payload, onEnd = { onEnded(connection, it) }) { values ->
                 onValues(values.mapNotNull { it as? JsonObject })
@@ -150,6 +153,7 @@ class ThreadSession internal constructor(
         var changed = false
         var live = false
         synchronized(lock) {
+            failures = 0
             for (v in values) when (projection.apply(v)) {
                 ThreadProjection.Change.ROWS -> changed = true
                 ThreadProjection.Change.LIVE -> live = true
@@ -168,21 +172,28 @@ class ThreadSession internal constructor(
     }
 
     private fun onEnded(connection: RpcConnection, error: Throwable?) {
-        synchronized(lock) {
+        val retry = synchronized(lock) {
             if (subscribedOn !== connection) return
             subscription = null
-            subscribedOn = null
+            failures++
+            failures <= MAX_RESUBSCRIBES
         }
         // A stream that failed on a live socket (the server's live buffer filled) resumes from the cursor.
+        // One that keeps failing (the thread is gone) stops, and the next socket tries again.
         if (error != null && !connection.isClosed) {
             Timeline.mark("$traceName.stream.ended", error.message?.take(120))
-            attach(connection)
+            if (retry) {
+                synchronized(lock) { subscribedOn = null }
+                attach(connection)
+            }
         }
     }
 
     private fun publish(phase: Phase) {
         val next = synchronized(lock) {
-            val rows = projection.rows()
+            // List keys must be unique; drop a repeated id rather than crash the view.
+            val seen = HashSet<String>()
+            val rows = projection.rows().filter { seen.add(it.id) }
             val nextRendered = HashMap<String, TimelineRow>(rows.size * 2)
             val out = rows.map { row ->
                 val prev = rendered[row.id]
@@ -231,5 +242,6 @@ class ThreadSession internal constructor(
 
     private companion object {
         const val SAVE_DEBOUNCE_MS = 5_000L
+        const val MAX_RESUBSCRIBES = 2
     }
 }

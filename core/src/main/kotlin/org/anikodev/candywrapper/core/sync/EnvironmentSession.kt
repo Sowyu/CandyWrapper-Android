@@ -297,7 +297,7 @@ class EnvironmentSession(
         startPings(conn)
     }
 
-    private fun subscribeShell(conn: RpcConnection) {
+    private fun subscribeShell(conn: RpcConnection, attempt: Int = 0) {
         val payload = buildJsonObject {
             synchronized(shellLock) {
                 shell.resetLive()
@@ -308,10 +308,11 @@ class EnvironmentSession(
         val start = Timeline.nowMs()
         var first = true
         conn.subscribe("orchestration.subscribeShell", payload, onEnd = { error ->
-            // The server ends the stream when its live buffer overflows; resume from the cursor.
+            // The server ends the stream when its live buffer overflows; resume from the cursor. If it
+            // keeps failing, drop the socket and let the backoff reconnect.
             if (error != null && !conn.isClosed) {
                 Timeline.mark("$trace.shell.stream.ended", error.message?.take(120))
-                subscribeShell(conn)
+                if (attempt < 2) subscribeShell(conn, attempt + 1) else conn.close()
             }
         }) { values ->
             if (first) {
