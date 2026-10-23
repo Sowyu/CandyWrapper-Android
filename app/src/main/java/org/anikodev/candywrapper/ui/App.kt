@@ -84,6 +84,8 @@ fun App(graph: AppGraph, sharedText: String?, consumeShared: () -> Unit) {
     val main = nav.main
     LaunchedEffect(main) { main.envId?.let { graph.rememberThread(it, main.threadId) } }
     val drawer = remember { DrawerState(open = main.threadId == null) }
+    // With no thread open the sidebar is where the next step is, so a phone shows it.
+    LaunchedEffect(main) { if (main.threadId == null && !drawer.isOpen) drawer.open() }
     val sessions by graph.environments.sessions.collectAsStateWithLifecycle()
     var renaming by remember { mutableStateOf<Pair<String, ThreadSummary>?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -220,6 +222,7 @@ private fun SidebarHost(
                     })
                 }
             },
+            refresh = { session.networkChanged() },
             toggleArchived = {
                 archived = if (archived.open) ArchivedList() else ArchivedList(open = true)
                 if (archived.open) archivedLoads++
