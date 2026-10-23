@@ -34,9 +34,11 @@ fun StashTab(count: Int, onOpen: () -> Unit) {
     if (count == 0) return
     val c = Candy.colors
     val shape = RoundedCornerShape(Radius.md)
-    Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 6.dp), contentAlignment = Alignment.CenterEnd) {
+    val redesign = c.redesign
+    // Redesign floats it as a pill inside the composer's corner, 8dp above it.
+    Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = if (redesign) 12.dp + Pill.inset else 12.dp, bottom = if (redesign) Pill.gap else 6.dp), contentAlignment = Alignment.CenterEnd) {
         Row(
-            Modifier.heightIn(min = 32.dp).clip(shape).background(c.card).border(1.dp, c.border, shape)
+            Modifier.heightIn(min = if (redesign) Pill.height else 32.dp).let { if (redesign) it.floating(shape).clip(shape) else it.clip(shape).background(c.card).border(1.dp, c.border, shape) }
                 .clickable(role = Role.Button, onClickLabel = "Open stash", onClick = onOpen)
                 .semantics { contentDescription = "Stashed prompts: $count. Open stash." }
                 .padding(horizontal = 10.dp),
@@ -68,7 +70,9 @@ fun StashList(
 ) {
     val c = Candy.colors
     val shape = RoundedCornerShape(Radius.xl)
-    Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 6.dp).clip(shape).background(c.card).border(1.dp, c.border, shape)) {
+    val panel = if (c.redesign) Modifier.padding(start = 12.dp + Pill.inset, end = 12.dp + Pill.inset, bottom = Pill.gap).floating(shape, c.popover.copy(alpha = 0.9f)).clip(shape)
+        else Modifier.padding(start = 12.dp, end = 12.dp, bottom = 6.dp).clip(shape).background(c.card).border(1.dp, c.border, shape)
+    Column(Modifier.fillMaxWidth().then(panel)) {
         Row(
             Modifier.fillMaxWidth().height(44.dp).clickable(role = Role.Button, onClickLabel = "Close stash", onClick = onClose).padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,

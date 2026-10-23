@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -156,6 +157,7 @@ fun Composer(
     initialMenu: Picker? = null,
     trayAbove: Boolean = false,
     onStash: (() -> Unit)? = null,
+    footer: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val c = Candy.colors
     var menu by remember { mutableStateOf(initialMenu) }
@@ -167,8 +169,15 @@ fun Composer(
         if (error != null) Alert(error, NoticeTone.ERROR, action = "Dismiss", onAction = onDismissError)
         Column(
             Modifier.fillMaxWidth()
-                .let { if (c.dark) it else it.shadow(12.dp, shape, ambientColor = Color.Black.copy(alpha = 0.04f), spotColor = Color.Black.copy(alpha = 0.1f)) }
-                .clip(shape).background(c.card).border(1.dp, c.border, shape),
+                .let {
+                    when {
+                        // Redesign: Capy's prompt bar, frosted over the art with the pills' rim and shadow.
+                        c.redesign -> it.floating(shape)
+                        c.dark -> it
+                        else -> it.shadow(12.dp, shape, ambientColor = Color.Black.copy(alpha = 0.04f), spotColor = Color.Black.copy(alpha = 0.1f))
+                    }
+                }
+                .clip(shape).let { if (c.redesign) it else it.background(c.card).border(1.dp, c.border, shape) },
         ) {
             if (files.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -264,6 +273,8 @@ fun Composer(
             }
             }
         }
+        // Redesign: the machine row and the waiting pill float under the composer, inside its corners.
+        if (footer != null && c.redesign) Row(Modifier.fillMaxWidth().padding(horizontal = Pill.inset), verticalAlignment = Alignment.CenterVertically, content = footer)
         // Real progress only: "Uploading 2 of 3", "Sending", "Stopping".
         if (busy != null) Txt(busy, CandyType.xs, c.mutedForeground, modifier = Modifier.padding(start = 12.dp))
     }
@@ -272,6 +283,8 @@ fun Composer(
 /** The 1px rule T3 draws between composer controls. */
 @Composable
 private fun ControlDivider() {
+    // Capy's chips have no dividers.
+    if (Candy.redesign) return
     Box(Modifier.padding(horizontal = 2.dp).width(1.dp).height(16.dp).background(Candy.colors.border))
 }
 
@@ -314,9 +327,12 @@ private fun SendButton(stop: Boolean, canSend: Boolean, onClick: () -> Unit, onL
             canSend -> c.send
             else -> c.send.copy(alpha = 0.4f)
         }
-        Box(Modifier.size(36.dp).pressScale(source).clip(CircleShape).background(fill), contentAlignment = Alignment.Center) {
+        // Redesign: Capy's rounded square in the accent, its glyph in the accent's own text colour.
+        val shape = if (c.redesign) RoundedCornerShape(Radius.md) else CircleShape
+        val glyph = if (c.redesign && !stop) c.primaryForeground else Color.White
+        Box(Modifier.size(if (c.redesign) 34.dp else 36.dp).pressScale(source).clip(shape).background(fill), contentAlignment = Alignment.Center) {
             if (stop) Box(Modifier.size(12.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
-            else Icon(Icons.ArrowUp, Color.White, 18.dp)
+            else Icon(Icons.ArrowUp, glyph, 18.dp)
         }
     }
 }

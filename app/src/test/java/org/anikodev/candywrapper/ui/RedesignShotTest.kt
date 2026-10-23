@@ -42,6 +42,25 @@ class RedesignShotTest {
     @Test fun threadLight() = thread(false)
     @Test fun threadDark() = thread(true)
 
+    /** A run going: the working row, the queue as a floating card, the Stash pill and the machine row with Waiting. */
+    private fun running(dark: Boolean) = redesignShot("running-phone", dark) {
+        AppShell(DrawerState(open = false), sidebar = {}) {
+            ThreadShotTest.ThreadScreenFixture(ThreadFixtures.state.copy(running = true, queued = ThreadFixtures.queued)) {
+                QueuedList(ThreadFixtures.queued, canSteer = true, onSteer = {}, onCancel = {})
+                StashTab(3) {}
+                Composer(
+                    text = "", onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
+                    running = true, canStop = true, files = emptyList(), busy = null, error = null, connected = true,
+                    onModel = {}, onRuntimeMode = {}, onTogglePlan = null, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
+                    onStop = {}, onDismissError = {}, trayAbove = true, onStash = {},
+                    footer = { DeviceRow("anika-mbp", true); WaitingPill("Waiting") { _, _ -> } },
+                )
+            }
+        }
+    }
+    @Test fun runningLight() = running(false)
+    @Test fun runningDark() = running(true)
+
     private fun settings(dark: Boolean) = redesignShot("settings-phone", dark) {
         AppShell(DrawerState(open = false), sidebar = {}) {
             ArtEmphasisEffect(ArtEmphasis.SETTINGS)

@@ -1,5 +1,6 @@
 package org.anikodev.candywrapper.ui
 
+import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
@@ -117,12 +118,26 @@ private val secondTicker by lazy { SecondTicker(MainScope(), { wallClock() }) { 
 val LocalTicking = compositionLocalOf { true }
 
 /**
+ * The shared second ticker's count while the caller is on screen and the app is started, for marks
+ * that step with it (Redesign's dot grid). Only the caller recomposes, once a second.
+ */
+@Composable
+fun rememberSecondTick(): Long {
+    val ticking = LocalTicking.current
+    LifecycleStartEffect(ticking) {
+        if (ticking) secondTicker.acquire()
+        onStopOrDispose { if (ticking) secondTicker.release() }
+    }
+    return tickSecond.longValue
+}
+
+/**
  * A duration since [since] that ticks each second while it is on screen and the app is started,
  * on one ticker shared by every such label. Only this text recomposes, and only when the string
  * changes; nothing ticks once the last one leaves.
  */
 @Composable
-fun TickingText(since: Long, format: (Long) -> String, style: TextStyle, color: Color, prefix: String = "", suffix: String = "", modifier: Modifier = Modifier) {
+fun TickingText(since: Long, format: (Long) -> String, style: TextStyle, color: Color, prefix: String = "", suffix: String = "", modifier: Modifier = Modifier, roll: Boolean = false) {
     val ticking = LocalTicking.current
     LifecycleStartEffect(ticking) {
         if (ticking) secondTicker.acquire()
@@ -135,5 +150,32 @@ fun TickingText(since: Long, format: (Long) -> String, style: TextStyle, color: 
             prefix + format(now - since) + suffix
         }
     }
-    Txt(text, style, color, modifier = modifier, maxLines = 1)
+    if (roll) RollingText(prefix, text.removePrefix(prefix), style, color, modifier) else Txt(text, style, color, modifier = modifier, maxLines = 1)
+}
+
+/**
+ * Redesign's "Working for 13s" (DitherWorkingTicker): a fixed [prefix], then each character of [value]
+ * in its own slot, lined up from the right, so a changed digit rolls up out of its slot as the next
+ * rolls in over 320 ms. It moves only when the ticker changes the text.
+ */
+@Composable
+fun RollingText(prefix: String, value: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.Row(modifier) {
+        Txt(prefix, style, color, maxLines = 1)
+        for ((i, ch) in value.withIndex()) {
+            // Keyed from the right, where the seconds change: "9s" to "10s" rolls the 9 and adds a slot.
+            androidx.compose.runtime.key(value.length - i) {
+                androidx.compose.animation.AnimatedContent(
+                    ch,
+                    transitionSpec = {
+                        val curve = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(320, easing = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f))
+                        val fade = androidx.compose.animation.core.tween<Float>(320)
+                        (androidx.compose.animation.slideInVertically(curve) { (it * 0.8f).toInt() } + androidx.compose.animation.fadeIn(fade)) togetherWith
+                            (androidx.compose.animation.slideOutVertically(curve) { -(it * 0.8f).toInt() } + androidx.compose.animation.fadeOut(fade))
+                    },
+                    label = "roll",
+                ) { c -> Txt(c.toString(), style, color, maxLines = 1) }
+            }
+        }
+    }
 }

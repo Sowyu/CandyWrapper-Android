@@ -434,6 +434,15 @@ fun WorkingRow(since: Long, queued: Int) {
         val style = CandyType.sm.merge(TextStyle(fontFeatureSettings = "tnum"))
         val tail = if (queued > 0) " · $queued queued" else ""
         val padding = Modifier.padding(start = 2.dp, bottom = 8.dp)
+        if (c.redesign) {
+            // Redesign: Capy's dot grid before the line, the digits roll, and no hairline under it.
+            Row(padding, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DotGrid(c.mutedForeground)
+                if (since > 0) TickingText(since, ::workingTimer, style, c.mutedForeground, prefix = "Working for ", suffix = tail, roll = true)
+                else Txt("Working...$tail", style, c.mutedForeground)
+            }
+            return@Column
+        }
         if (since > 0) TickingText(since, ::workingTimer, style, c.mutedForeground, prefix = "Working for ", suffix = tail, modifier = padding)
         else Txt("Working...$tail", style, c.mutedForeground, modifier = padding)
         Box(Modifier.fillMaxWidth().height(1.dp).background(c.border.copy(alpha = c.border.alpha * 0.6f)))

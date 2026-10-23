@@ -263,6 +263,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                     else -> Alert("This thread is not saved on the phone yet. It loads when the computer answers.", NoticeTone.NEUTRAL, action = "Retry") { session.wake() }
                 }
             },
+            onDiff = { d -> nav.push(Screen.Diff(envId, threadId, d.checkpointId, d.title)) },
             menu = { close ->
                 MenuItem("Rename thread", Icons.Pencil, enabled = live) { close(); renaming = true }
                 MenuItem("Refresh", Icons.RefreshCw, detail = "Subscribe again from the last event seen") { close(); thread.resubscribe() }
@@ -330,6 +331,18 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                 },
                 trayAbove = pending != null || state.queued.isNotEmpty() || stashOpen || stashed.isNotEmpty(),
                 onStash = ::stashDraft,
+                footer = {
+                    val env by session.env.collectAsStateWithLifecycle()
+                    DeviceRow(env.label, live)
+                    if (summary?.pill == StatusPill.WAITING) {
+                        WaitingPill("Waiting") { open, close ->
+                            Menu(open, close, side = MenuSide.ABOVE, alignEnd = true, minWidth = 220.dp) {
+                                MenuLabel("Waiting on background work")
+                                MenuItem("Stop", Icons.Square, enabled = live && state.stoppableRunId != null) { close(); act("Stopping") { thread.stop() } }
+                            }
+                        }
+                    }
+                },
             )
         }
         if (renaming) {
@@ -361,6 +374,7 @@ fun ThreadView(
     empty: @Composable () -> Unit = {},
     menu: @Composable ColumnScope.(close: () -> Unit) -> Unit = {},
     menuOpen: Boolean = false,
+    onDiff: (DiffTotals) -> Unit = {},
     bottom: @Composable ColumnScope.() -> Unit,
 ) {
     val c = Candy.colors
@@ -375,10 +389,17 @@ fun ThreadView(
             titleLead = project?.let { p -> { ProjectIcon(p, p.title) } },
             onTitleClick = { actions = true },
         ) {
-            Box {
-                IconButton(Icons.Ellipsis, "Thread actions", tint = c.foreground) { actions = true }
-                Menu(actions, { actions = false }, alignEnd = true, minWidth = 220.dp) { menu { actions = false } }
+            val actionsButton: @Composable () -> Unit = {
+                Box {
+                    if (c.redesign) PillIcon(Icons.Ellipsis, "Thread actions") { actions = true }
+                    else IconButton(Icons.Ellipsis, "Thread actions", tint = c.foreground) { actions = true }
+                    Menu(actions, { actions = false }, alignEnd = true, minWidth = 220.dp) { menu { actions = false } }
+                }
             }
+            if (c.redesign) {
+                val diff = remember(state.items) { latestDiff(state.items) }
+                HeaderPill(diff, onDiff, actionsButton)
+            } else actionsButton()
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             val side = maxOf(16.dp, (maxWidth - ChatLaneWidth) / 2)

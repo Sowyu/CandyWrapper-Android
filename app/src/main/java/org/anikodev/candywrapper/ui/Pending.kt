@@ -65,6 +65,20 @@ const val APPROVAL_LOCK = "Resolve this approval request to continue"
  */
 @Composable
 fun ComposerTray(modifier: Modifier = Modifier, border: Color = Candy.colors.border, fill: Color = Candy.colors.card, content: @Composable ColumnScope.() -> Unit) {
+    val c = Candy.colors
+    if (c.redesign) {
+        // Redesign attaches nothing to the composer: the tray floats as its own card, 8dp above it.
+        val card = RoundedCornerShape(Radius.xl)
+        val tinted = border != c.border
+        Column(
+            modifier.fillMaxWidth().padding(start = 12.dp + Pill.inset, end = 12.dp + Pill.inset, bottom = Pill.gap)
+                .floating(card, c.popover.copy(alpha = 0.9f)).clip(card).background(if (fill != c.card) fill else Color.Transparent)
+                .let { if (tinted) it.border(1.dp, border, card) else it }
+                .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 8.dp),
+            content = content,
+        )
+        return
+    }
     val shape = RoundedCornerShape(topStart = Radius.xl + 2.dp, topEnd = Radius.xl + 2.dp)
     val background = Candy.colors.card
     Column(
