@@ -621,8 +621,9 @@ private class MenuPosition(private val side: MenuSide, private val alignEnd: Boo
 }
 
 /**
- * A menu item (menu.tsx): `min-h-8 rounded-sm px-2 text-base` on touch with an 18dp muted icon; the
- * highlighted (pressed) item takes `bg-accent`. [detail] adds the muted second line T3's pickers use.
+ * A menu item (menu.tsx): `min-h-8 rounded-sm px-2 text-base` on touch with an 18dp muted icon. The
+ * pressed item and the checked one of a radio group take `bg-accent`, as in T3's pickers. [detail]
+ * adds the muted second line the access picker uses.
  */
 @Composable
 fun MenuItem(
@@ -641,7 +642,7 @@ fun MenuItem(
     val pressed by source.collectIsPressedAsState()
     val fg = if (destructive) c.errorForeground else c.foreground
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(RoundedCornerShape(Radius.sm)).background(if (pressed) c.accent else Color.Transparent)
+        Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(RoundedCornerShape(Radius.sm)).background(if (pressed || selected) c.accent else Color.Transparent)
             .clickable(source, null, enabled = enabled, role = Role.Button, onClick = onClick)
             .graphicsLayer { alpha = if (enabled) 1f else 0.64f }
             .padding(horizontal = 8.dp, vertical = 6.dp),
@@ -654,8 +655,17 @@ fun MenuItem(
             if (detail != null) Txt(detail, CandyType.sm, c.mutedForeground)
         }
         if (trailing != null) trailing()
-        if (selected) Icon(Icons.Check, c.foreground, 16.dp, Modifier.padding(top = if (detail != null) 4.dp else 0.dp))
     }
+}
+
+/** T3's "Default" tag in the reasoning menu: an outlined `text-xs` badge. */
+@Composable
+fun DefaultTag() {
+    val c = Candy.colors
+    Txt(
+        "Default", CandyType.xsMedium, c.foreground, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(Radius.sm)).border(1.dp, c.input, RoundedCornerShape(Radius.sm)).padding(horizontal = 5.dp, vertical = 1.dp),
+    )
 }
 
 /** `MenuSeparator`: `-mx-1 my-1 h-px bg-border`. */

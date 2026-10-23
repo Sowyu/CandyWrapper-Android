@@ -223,11 +223,11 @@ fun Composer(
                             Menu(menu == Picker.ACCESS, { menu = null }, side = MenuSide.ABOVE, minWidth = 260.dp) {
                                 if (onTogglePlan != null) {
                                     MenuLabel("Mode")
-                                    MenuItem("Chat", Icons.MessageCircle, selected = settings.interactionMode != "plan") { menu = null; if (settings.interactionMode == "plan") onTogglePlan() }
-                                    MenuItem("Plan", Icons.ListTodo, selected = settings.interactionMode == "plan") { menu = null; if (settings.interactionMode != "plan") onTogglePlan() }
+                                    MenuItem("Chat", selected = settings.interactionMode != "plan") { menu = null; if (settings.interactionMode == "plan") onTogglePlan() }
+                                    MenuItem("Plan", selected = settings.interactionMode == "plan") { menu = null; if (settings.interactionMode != "plan") onTogglePlan() }
                                     MenuSeparator()
                                 }
-                                AccessItems(server, settings) { mode -> menu = null; onRuntimeMode(mode) }
+                                AccessItems(server, settings, plain = true) { mode -> menu = null; onRuntimeMode(mode) }
                             }
                         }
                         if (settings.interactionMode == "plan" && onTogglePlan != null) PlanToggle(true, locked == null, onTogglePlan)
@@ -368,7 +368,7 @@ private fun OptionsMenu(open: Boolean, server: ServerInfo, settings: ComposerSet
             } else {
                 val current = model!!.option(d.id)?.text ?: d.defaultChoice?.id
                 for (choice in d.choices) {
-                    MenuItem(choice.label, selected = choice.id == current) {
+                    MenuItem(choice.label, selected = choice.id == current, trailing = if (choice.isDefault) ({ DefaultTag() }) else null) {
                         onModel(model.withOption(OptionValue(d.id, text = choice.id)))
                         onDismiss()
                     }
@@ -387,11 +387,12 @@ private fun AccessMenu(open: Boolean, server: ServerInfo, settings: ComposerSett
 }
 
 @Composable
-private fun AccessItems(server: ServerInfo, settings: ComposerSettings, onPick: (String) -> Unit) {
+private fun AccessItems(server: ServerInfo, settings: ComposerSettings, plain: Boolean = false, onPick: (String) -> Unit) {
     val supported = settings.model?.let { server.provider(it.instanceId)?.runtimeModes }.orEmpty()
     MenuLabel("Access")
     for (mode in ServerInfo.RUNTIME_MODES.filter { supported.isEmpty() || it in supported }) {
-        MenuItem(runtimeModeLabel(mode), runtimeModeIcon(mode), detail = runtimeModeDetail(mode), selected = mode == settings.runtimeMode) { onPick(mode) }
+        if (plain) MenuItem(runtimeModeLabel(mode), selected = mode == settings.runtimeMode) { onPick(mode) }
+        else MenuItem(runtimeModeLabel(mode), runtimeModeIcon(mode), detail = runtimeModeDetail(mode), selected = mode == settings.runtimeMode) { onPick(mode) }
     }
 }
 
