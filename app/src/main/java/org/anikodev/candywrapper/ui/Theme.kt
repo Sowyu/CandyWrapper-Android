@@ -6,9 +6,6 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -276,15 +273,6 @@ object CandyType {
     val mono = t(13, 20, family = FontFamily.Monospace)
     val monoSmall = t(12, 18, family = FontFamily.Monospace)
 
-    // Older names kept for the screens that have not moved to the scale names.
-    val title = t(16, 22, FontWeight.SemiBold)
-    val heading = xl
-    val body = chat
-    val ui = sm
-    val uiMedium = smMedium
-    val small = t(13, 18)
-    val meta = xs
-    val label = xsMedium
 }
 
 /** Corner radii: `--radius-sm` 6, `--control-radius`/`--radius-md` 8, `--radius` 10, `--radius-xl` 14, `--radius-2xl` 18. */
@@ -329,24 +317,12 @@ fun CandyTheme(choice: ThemeChoice = ThemeChoice.SYSTEM, content: @Composable ()
         ThemeChoice.DARK -> true
     }
     val c = candyColors(dark)
-    // Material stays only for the updater's card; every other screen draws with the kit in Kit.kt.
-    val scheme = if (dark) {
-        darkColorScheme(primary = c.primary, onPrimary = c.primaryForeground, background = c.background, onBackground = c.foreground,
-            surface = c.background, onSurface = c.foreground, surfaceVariant = c.card, onSurfaceVariant = c.mutedForeground,
-            surfaceContainer = c.card, surfaceContainerHigh = c.card, outline = c.border, outlineVariant = c.border, error = c.errorForeground)
-    } else {
-        lightColorScheme(primary = c.primary, onPrimary = c.primaryForeground, background = c.background, onBackground = c.foreground,
-            surface = c.background, onSurface = c.foreground, surfaceVariant = c.card, onSurfaceVariant = c.mutedForeground,
-            surfaceContainer = c.card, surfaceContainerHigh = c.card, outline = c.border, outlineVariant = c.border, error = c.errorForeground)
-    }
     val indication = remember(c.pressed) { PressIndication(c.pressed) }
     val selection = remember(c.primary) { TextSelectionColors(c.primary, c.primary.copy(alpha = 0.3f)) }
-    MaterialTheme(colorScheme = scheme) {
-        CompositionLocalProvider(
-            LocalCandyColors provides c,
-            LocalIndication provides indication,
-            LocalTextSelectionColors provides selection,
-            content = content,
-        )
-    }
+    CompositionLocalProvider(
+        LocalCandyColors provides c,
+        LocalIndication provides indication,
+        LocalTextSelectionColors provides selection,
+        content = content,
+    )
 }
