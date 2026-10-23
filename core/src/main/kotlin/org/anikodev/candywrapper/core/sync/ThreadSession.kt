@@ -19,10 +19,21 @@ import org.anikodev.candywrapper.core.rpc.RpcConnection
 import org.anikodev.candywrapper.core.store.LocalCache
 import org.anikodev.candywrapper.core.timing.Timeline
 
+/** What the thread view draws, one entry per list item. */
+sealed interface TimelineItem {
+    val key: String
+}
+
 /** A row ready to draw: the turn row plus its parsed Markdown. The same instance comes back while the row does not change. */
-data class TimelineRow(val row: TurnRow, val markdown: List<MdBlock>?) {
-    val key: String get() = row.id
+data class TimelineRow(val row: TurnRow, val markdown: List<MdBlock>?) : TimelineItem {
+    override val key: String get() = row.id
     val kind: RowKind get() = row.kind
+}
+
+/** Two or more tool calls in a row, drawn as one collapsed line. */
+data class ToolGroup(override val key: String, val rows: List<TimelineRow>) : TimelineItem {
+    val running: Boolean get() = rows.any { it.row.running }
+    val failed: Int get() = rows.count { it.row.failed }
 }
 
 /**
@@ -40,10 +51,12 @@ class ThreadSession internal constructor(
     private val cache: LocalCache,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
+    /** The environment's open socket, if any, read when the cache load finishes. */
+    private val liveConnection: () -> RpcConnection?,
 ) {
     enum class Phase { LOADING, CACHED, SYNCING, LIVE, DELETED }
 
-    data class State(val rows: List<TimelineRow> = emptyList(), val title: String? = null, val phase: Phase = Phase.LOADING)
+    data class State(val items: List<TimelineItem> = emptyList(), val title: String? = null, val phase: Phase = Phase.LOADING)
 
     private val lock = Any()
     private val projection = ThreadProjection(threadId)
@@ -62,8 +75,11 @@ class ThreadSession internal constructor(
 
     val held: Boolean get() = synchronized(lock) { refs > 0 }
 
-    /** Starts showing the thread. [connection] is the environment's live socket, if any. */
-    fun acquire(connection: RpcConnection?) {
+    /**
+     * Starts showing the thread: loads the cache, then subscribes on the open socket. A socket that
+     * opens later attaches through [attach].
+     */
+    fun acquire() {
         val first = synchronized(lock) {
             refs++
             if (refs == 1) {
@@ -78,7 +94,7 @@ class ThreadSession internal constructor(
         scope.launch(io) {
             if (needsLoad) load()
             loaded.await()
-            connection?.let(::attach)
+            liveConnection()?.let(::attach)
         }
     }
 
@@ -175,9 +191,24 @@ class ThreadSession internal constructor(
                 r
             }
             rendered = nextRendered
-            State(out, projection.title, if (projection.deleted) Phase.DELETED else phase)
+            State(group(out), projection.title, if (projection.deleted) Phase.DELETED else phase)
         }
         _state.value = next
+    }
+
+    /** Folds runs of two or more tool rows into a [ToolGroup] keyed by its first row. */
+    private fun group(rows: List<TimelineRow>): List<TimelineItem> {
+        val out = ArrayList<TimelineItem>(rows.size)
+        var i = 0
+        while (i < rows.size) {
+            var j = i
+            while (j < rows.size && rows[j].kind == RowKind.TOOL) j++
+            when {
+                j - i >= 2 -> { out += ToolGroup("tools:" + rows[i].key, rows.subList(i, j).toList()); i = j }
+                else -> { out += rows[i]; i++ }
+            }
+        }
+        return out
     }
 
     private fun markdownFor(row: TurnRow): List<MdBlock>? = when (row.kind) {

@@ -41,7 +41,7 @@ object OkHttpRpcSocket {
 
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     opened = true
-                    if (cont.isActive) cont.resume(Wrapper(webSocket)) else webSocket.cancel()
+                    cont.resume(Wrapper(webSocket)) { _, _, _ -> webSocket.cancel() }
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) = listener.onText(text)

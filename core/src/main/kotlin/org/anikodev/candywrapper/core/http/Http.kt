@@ -75,7 +75,7 @@ class HttpStatusError(
 suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
     cont.invokeOnCancellation { cancel() }
     enqueue(object : Callback {
-        override fun onResponse(call: Call, response: Response) = cont.resume(response)
+        override fun onResponse(call: Call, response: Response) = cont.resume(response) { _, r, _ -> r.close() }
         override fun onFailure(call: Call, e: IOException) {
             if (cont.isActive) cont.resumeWithException(e)
         }

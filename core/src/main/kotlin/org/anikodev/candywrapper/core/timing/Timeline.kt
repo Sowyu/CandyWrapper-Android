@@ -1,5 +1,6 @@
 package org.anikodev.candywrapper.core.timing
 
+import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -14,8 +15,8 @@ import kotlinx.coroutines.flow.update
 object Timeline {
     data class Mark(val atMs: Double, val name: String, val durationMs: Double? = null, val detail: String? = null) {
         fun format(): String = buildString {
-            append(String.format("%8.1f ms  %s", atMs, name))
-            if (durationMs != null) append(String.format("  (%.1f ms)", durationMs))
+            append(String.format(Locale.ROOT, "%8.1f ms  %s", atMs, name))
+            if (durationMs != null) append(String.format(Locale.ROOT, "  (%.1f ms)", durationMs))
             if (detail != null) append("  ").append(detail)
         }
     }

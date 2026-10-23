@@ -221,7 +221,7 @@ class ClerkClient(
         )
         if (!native || !strategy(strategies)) throw ClerkError(null, "This sign-in method is not available for T3 Connect.")
         // single_session_mode refuses a second sign-in on a client that has one (`session_exists`).
-        if (auth?.bool("single_session_mode") == true && session()?.sessionId != null) signOut()
+        if (auth.bool("single_session_mode") == true && session()?.sessionId != null) signOut()
         own(owner)
     }
 

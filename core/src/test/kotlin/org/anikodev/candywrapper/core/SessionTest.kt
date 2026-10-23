@@ -58,7 +58,7 @@ class SessionTest {
         withTimeout(10_000) { while (fake.frames.none { it.str("_tag") == "Ack" && it.str("requestId") == "1" } || cache.shell(fake.envId) == null) Thread.sleep(5) }
         val requests = fake.frames.filter { it.str("_tag") == "Request" }.map { it.str("tag") }
         assertEquals(listOf("orchestration.subscribeShell", "server.getConfig"), requests.take(2))
-        assertNull(fake.frames.first().obj("payload")!!["afterSequence"])
+        assertNull(fake.frames.first { it.str("tag") == "orchestration.subscribeShell" }.obj("payload")!!["afterSequence"])
         assertEquals("Hello", first.threads.value.groups.single().threads.single().title)
         first.stop()
 
@@ -69,8 +69,9 @@ class SessionTest {
         second.start()
         withTimeout(10_000) { second.state.first { it is ConnectionState.Live } }
         assertEquals(listOf("GET /.well-known/t3/environment", "GET /ws"), fake.paths())
-        withTimeout(10_000) { while (fake.frames.isEmpty()) Thread.sleep(5) }
-        assertEquals(7, fake.frames.first().obj("payload")!!.long("afterSequence"))
+        fun shellRequest() = fake.frames.firstOrNull { it.str("tag") == "orchestration.subscribeShell" }
+        withTimeout(10_000) { while (shellRequest() == null) Thread.sleep(5) }
+        assertEquals(7, shellRequest()!!.obj("payload")!!.long("afterSequence"))
         assertEquals(1, fake.ticketsMinted)
         second.stop()
     }

@@ -136,7 +136,7 @@ class EnvironmentSession(
     }
 
     fun thread(threadId: String): ThreadSession = synchronized(threadSessions) {
-        threadSessions.getOrPut(threadId) { ThreadSession(id, threadId, "$trace.thread.${threadId.take(8)}", cache, scope, io) }.also {
+        threadSessions.getOrPut(threadId) { ThreadSession(id, threadId, "$trace.thread.${threadId.take(8)}", cache, scope, io, ::liveConnection) }.also {
             // Keep the threads in use plus the last few closed ones in memory for instant reopen.
             if (threadSessions.size > RETAINED_THREADS) {
                 threadSessions.entries.filter { !it.value.held && it.key != threadId }
