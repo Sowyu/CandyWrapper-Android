@@ -126,7 +126,7 @@ fun Composer(
     val c = Candy.colors
     val canSend = connected && busy == null && (text.isNotBlank() || files.isNotEmpty())
     Column(Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 8.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (error != null) Notice(error, c.error, c.errorSurface, action = "Dismiss", onAction = onDismissError)
+        if (error != null) Notice(error, c.errorForeground, c.errorSurface, action = "Dismiss", onAction = onDismissError)
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.composer)).background(c.card)
                 .border(1.dp, c.border, RoundedCornerShape(Radius.composer)),
@@ -218,8 +218,8 @@ private fun PlanToggle(on: Boolean, onToggle: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Icon(Icons.ListTodo, if (on) c.info else c.mutedForeground, 15.dp)
-            Txt("Plan", CandyType.small, if (on) c.info else c.foreground)
+            Icon(Icons.ListTodo, if (on) c.infoForeground else c.mutedForeground, 15.dp)
+            Txt("Plan", CandyType.small, if (on) c.infoForeground else c.foreground)
         }
     }
 }

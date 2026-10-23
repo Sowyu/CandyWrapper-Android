@@ -30,8 +30,8 @@ fun ConnectionState.label(): String = when (this) {
 
 @Composable
 fun ConnectionState.color(): Color = when (this) {
-    is ConnectionState.Live -> Candy.colors.success
-    is ConnectionState.Offline, is ConnectionState.Blocked -> Candy.colors.error
+    is ConnectionState.Live -> Candy.colors.successForeground
+    is ConnectionState.Offline, is ConnectionState.Blocked -> Candy.colors.errorForeground
     else -> Candy.colors.mutedForeground
 }
 
@@ -40,14 +40,14 @@ fun ConnectionState.color(): Color = when (this) {
 fun PillChip(pill: StatusPill, unread: Boolean, workingSince: Long, now: Long) {
     val c = Candy.colors
     val (text, color) = when (pill) {
-        StatusPill.WORKING -> (if (workingSince > 0) "Working ${duration(now - workingSince)}" else "Working") to c.info
+        StatusPill.WORKING -> (if (workingSince > 0) "Working ${duration(now - workingSince)}" else "Working") to c.infoForeground
         StatusPill.WAITING -> "Waiting" to c.mutedForeground
-        StatusPill.APPROVAL -> "Approval" to c.warning
-        StatusPill.INPUT -> "Input" to c.warning
-        StatusPill.FAILED -> "Failed" to c.error
-        StatusPill.LIMITED -> "Limited" to c.warning
+        StatusPill.APPROVAL -> "Approval" to c.warningForeground
+        StatusPill.INPUT -> "Input" to c.warningForeground
+        StatusPill.FAILED -> "Failed" to c.errorForeground
+        StatusPill.LIMITED -> "Limited" to c.warningForeground
         StatusPill.READY, StatusPill.NONE -> {
-            if (unread) Pill("Done", c.success)
+            if (unread) Pill("Done", c.successForeground)
             return
         }
     }

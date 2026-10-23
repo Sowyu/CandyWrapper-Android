@@ -1,6 +1,16 @@
 package org.anikodev.candywrapper.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -8,6 +18,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -18,6 +29,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,12 +37,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
-import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -43,39 +53,58 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Modifier.Node
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.invalidateDraw
-import androidx.compose.ui.Modifier.Node
-import androidx.compose.foundation.Image
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import java.text.Normalizer
 import kotlinx.coroutines.launch
 
-// The app's own controls, built from the tokens in Theme.kt. Nothing here animates: a press
-// shows a flat overlay while the finger is down, and that is the only feedback.
+// T3's controls (apps/web/src/components/ui/*), built from the tokens in Theme.kt. Sizes are T3's
+// below its `sm` breakpoint, the ones it uses on touch screens. Motion is T3's: 150 ms colour and
+// press-scale transitions, popups that fade and scale in from their trigger. Nothing loops.
 
-/** A pressed control draws [color] over itself, with no ripple and no animation. */
+/** A pressed control draws [color] over itself, with no ripple: T3's `:active` fill. */
 class PressIndication(private val color: Color) : IndicationNodeFactory {
     override fun create(interactionSource: InteractionSource): DelegatableNode = PressNode(interactionSource, color)
     override fun equals(other: Any?) = other is PressIndication && other.color == color
@@ -108,7 +137,7 @@ class PressIndication(private val color: Color) : IndicationNodeFactory {
 @Composable
 fun Txt(
     text: String,
-    style: TextStyle = CandyType.ui,
+    style: TextStyle = CandyType.sm,
     color: Color = Candy.colors.foreground,
     modifier: Modifier = Modifier,
     maxLines: Int = Int.MAX_VALUE,
@@ -124,19 +153,31 @@ fun Txt(
     )
 }
 
+/** A lucide icon in [tint]; `Color.Unspecified` keeps a brand glyph's own colours. */
 @Composable
-fun Icon(icon: ImageVector, tint: Color = Candy.colors.iconMuted, size: Dp = 18.dp, modifier: Modifier = Modifier, description: String? = null) {
+fun Icon(icon: ImageVector, tint: Color = Candy.colors.iconMuted, size: Dp = 16.dp, modifier: Modifier = Modifier, description: String? = null) {
     Image(
         rememberVectorPainter(icon), description, modifier.size(size),
-        colorFilter = ColorFilter.tint(tint),
+        colorFilter = if (tint == Color.Unspecified) null else ColorFilter.tint(tint),
     )
 }
 
-/** A 44dp-tall row or control that reacts to taps. */
+/** A row or control that reacts to taps. */
 fun Modifier.rowClick(enabled: Boolean = true, label: String? = null, onClick: () -> Unit) =
     clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick)
 
-/** A square icon button with a 44dp touch target. [description] is read by TalkBack. */
+/** T3's `active:scale-[0.97]`, over 150 ms, while [source] is pressed. */
+@Composable
+fun Modifier.pressScale(source: MutableInteractionSource): Modifier {
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.fast(), label = "press")
+    return graphicsLayer { scaleX = scale; scaleY = scale }
+}
+
+/**
+ * T3's ghost icon button (`size="icon"`): 36dp, the icon at 18dp (`size-4.5` on touch), an accent
+ * fill while pressed, inside a 44dp touch target. [description] is read by TalkBack.
+ */
 @Composable
 fun IconButton(
     icon: ImageVector,
@@ -144,21 +185,37 @@ fun IconButton(
     modifier: Modifier = Modifier,
     tint: Color = Candy.colors.iconMuted,
     enabled: Boolean = true,
-    size: Dp = 20.dp,
+    size: Dp = 18.dp,
+    box: Dp = 36.dp,
     onClick: () -> Unit,
 ) {
+    val c = Candy.colors
+    val source = remember { MutableInteractionSource() }
     Box(
-        modifier.size(44.dp).clip(RoundedCornerShape(Radius.lg)).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        modifier.size(maxOf(box, 44.dp)).clickable(source, null, enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, if (enabled) tint else tint.copy(alpha = 0.4f), size)
+        val pressed by source.collectIsPressedAsState()
+        Box(
+            Modifier.size(box).pressScale(source).clip(RoundedCornerShape(Radius.md)).background(if (pressed) c.accent else Color.Transparent),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, if (enabled) tint else tint.copy(alpha = 0.64f), size)
+        }
     }
 }
 
-enum class ButtonKind { PRIMARY, SECONDARY, GHOST, DESTRUCTIVE }
+/** T3's button variants (button.tsx). [SECONDARY] is `outline`, the default for plain actions. */
+enum class ButtonKind { PRIMARY, SECONDARY, GHOST, DESTRUCTIVE, DESTRUCTIVE_OUTLINE, WARNING_OUTLINE }
 
-/** T3's button: 36dp tall inside a 44dp target, radius 8, solid or outlined. */
+/** T3's button sizes on touch: `default` h-9, `sm` h-8, `xs` h-7. */
+enum class ButtonSize(val height: Dp, val padding: Dp, val icon: Dp) { DEFAULT(36.dp, 11.dp, 18.dp), SM(32.dp, 9.dp, 16.dp), XS(28.dp, 7.dp, 16.dp) }
+
+/**
+ * T3's button: `rounded-[--control-radius]` (8), a 1px border, `font-medium text-base` on touch
+ * (`text-sm` at xs), scale 0.97 while pressed, at least a 44dp touch target.
+ */
 @Composable
 fun CButton(
     label: String,
@@ -166,49 +223,78 @@ fun CButton(
     kind: ButtonKind = ButtonKind.SECONDARY,
     enabled: Boolean = true,
     icon: ImageVector? = null,
+    size: ButtonSize = ButtonSize.DEFAULT,
     onClick: () -> Unit,
 ) {
     val c = Candy.colors
     val shape = RoundedCornerShape(Radius.md)
+    val outlineFill = if (c.dark) c.input.copy(alpha = c.input.alpha * 0.32f) else c.popover
     val (fill, text, border) = when (kind) {
-        ButtonKind.PRIMARY -> Triple(c.primary, c.primaryForeground, Color.Transparent)
-        ButtonKind.SECONDARY -> Triple(c.card, c.foreground, c.input)
+        ButtonKind.PRIMARY -> Triple(c.primary, c.primaryForeground, c.primary)
+        ButtonKind.SECONDARY -> Triple(outlineFill, c.foreground, c.input)
         ButtonKind.GHOST -> Triple(Color.Transparent, c.foreground, Color.Transparent)
-        ButtonKind.DESTRUCTIVE -> Triple(c.errorSurface, c.error, Color.Transparent)
+        ButtonKind.DESTRUCTIVE -> Triple(c.error, Color.White, c.error)
+        ButtonKind.DESTRUCTIVE_OUTLINE -> Triple(outlineFill, c.errorForeground, c.input)
+        ButtonKind.WARNING_OUTLINE -> Triple(c.warningSurface, c.warningForeground, c.warning.copy(alpha = 0.32f))
     }
-    Box(modifier.heightIn(min = 44.dp), contentAlignment = Alignment.Center) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val pressedFill = when (kind) {
+        ButtonKind.PRIMARY, ButtonKind.DESTRUCTIVE -> fill.copy(alpha = 0.9f)
+        ButtonKind.GHOST, ButtonKind.SECONDARY, ButtonKind.DESTRUCTIVE_OUTLINE -> c.accent
+        ButtonKind.WARNING_OUTLINE -> c.warning.copy(alpha = if (c.dark) 0.24f else 0.16f)
+    }
+    Box(
+        modifier.heightIn(min = 44.dp).clickable(source, null, enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
         Row(
-            Modifier.height(36.dp).clip(shape).background(fill).border(1.dp, border, shape)
-                .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 14.dp)
-                .let { if (enabled) it else it.background(c.background.copy(alpha = 0.4f)) },
+            Modifier.height(size.height).pressScale(source).graphicsLayer { alpha = if (enabled) 1f else 0.64f }
+                .clip(shape).background(fill).let { if (pressed) it.background(pressedFill) else it }
+                .border(1.dp, border, shape).padding(horizontal = size.padding),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(if (size == ButtonSize.DEFAULT) 8.dp else 6.dp),
+        ) {
+            if (icon != null) Icon(icon, text, size.icon)
+            Txt(label, if (size == ButtonSize.XS) CandyType.smMedium else CandyType.baseMedium, text, maxLines = 1)
+        }
+    }
+}
+
+/**
+ * A composer or toolbar picker trigger (ComposerControl.tsx): a ghost control with a leading icon,
+ * the label in `text-muted-foreground` that turns foreground while open, and a chevron.
+ */
+@Composable
+fun SelectChip(
+    label: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    iconTint: Color = Candy.colors.mutedForeground,
+    description: String = label,
+    enabled: Boolean = true,
+    open: Boolean = false,
+    showLabel: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val c = Candy.colors
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    Box(modifier.heightIn(min = 44.dp).clickable(source, null, enabled = enabled, role = Role.Button, onClickLabel = description, onClick = onClick), contentAlignment = Alignment.Center) {
+        Row(
+            Modifier.height(32.dp).clip(RoundedCornerShape(Radius.md)).background(if (pressed || open) c.accent else Color.Transparent)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (icon != null) Icon(icon, text, 16.dp)
-            Txt(label, CandyType.uiMedium, if (enabled) text else text.copy(alpha = 0.5f), maxLines = 1)
+            if (icon != null) Icon(icon, iconTint, 16.dp)
+            if (showLabel) Txt(label, CandyType.sm, if (!enabled) c.mutedForeground.copy(alpha = 0.64f) else if (open) c.foreground else c.mutedForeground, maxLines = 1, modifier = Modifier.widthIn(max = 160.dp))
+            Icon(Icons.ChevronDown, c.mutedForeground.copy(alpha = 0.8f), 14.dp)
         }
     }
 }
 
-/** A picker trigger: label, optional leading icon and a chevron, in a 32dp control. */
-@Composable
-fun SelectChip(label: String, modifier: Modifier = Modifier, icon: ImageVector? = null, description: String = label, enabled: Boolean = true, onClick: () -> Unit) {
-    val c = Candy.colors
-    Box(modifier.heightIn(min = 44.dp), contentAlignment = Alignment.Center) {
-        Row(
-            Modifier.height(32.dp).clip(RoundedCornerShape(Radius.md)).clickable(enabled = enabled, role = Role.Button, onClickLabel = description, onClick = onClick)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            if (icon != null) Icon(icon, c.mutedForeground, 15.dp)
-            Txt(label, CandyType.small, if (enabled) c.foreground else c.mutedForeground, maxLines = 1, modifier = Modifier.widthIn(max = 150.dp))
-            Icon(Icons.ChevronDown, c.mutedForeground, 13.dp)
-        }
-    }
-}
-
-/** A single- or multi-line field with T3's input border. */
+/** T3's input (input.tsx): `rounded-lg border-input bg-background`, 36dp, `text-base` on touch. */
 @Composable
 fun TextInput(
     value: String,
@@ -220,16 +306,19 @@ fun TextInput(
     keyboard: KeyboardOptions = KeyboardOptions.Default,
     actions: KeyboardActions = KeyboardActions.Default,
     visual: VisualTransformation = VisualTransformation.None,
-    style: TextStyle = CandyType.body,
+    style: TextStyle = CandyType.base,
     label: String? = null,
+    leading: ImageVector? = null,
 ) {
     val c = Candy.colors
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (label != null) Txt(label, CandyType.label, c.foreground)
+    val shape = RoundedCornerShape(Radius.lg)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (label != null) Txt(label, CandyType.smMedium, c.foreground)
         BasicTextField(
             value, onChange,
-            Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(RoundedCornerShape(Radius.md)).background(c.card)
-                .border(1.dp, c.input, RoundedCornerShape(Radius.md)).semantics { contentDescription = label ?: placeholder },
+            Modifier.fillMaxWidth().heightIn(min = 36.dp).clip(shape)
+                .background(if (c.dark) c.input.copy(alpha = c.input.alpha * 0.32f) else c.background)
+                .border(1.dp, c.input, shape).semantics { contentDescription = label ?: placeholder },
             textStyle = style.merge(TextStyle(color = c.foreground)),
             singleLine = singleLine,
             minLines = minLines,
@@ -238,16 +327,26 @@ fun TextInput(
             visualTransformation = visual,
             cursorBrush = SolidColor(c.primary),
             decorationBox = { inner ->
-                Box(Modifier.padding(horizontal = 12.dp, vertical = 11.dp), contentAlignment = Alignment.CenterStart) {
-                    if (value.isEmpty()) Txt(placeholder, style, c.mutedForeground, maxLines = if (singleLine) 1 else Int.MAX_VALUE)
-                    inner()
+                Row(Modifier.padding(horizontal = 11.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (leading != null) {
+                        Icon(leading, c.mutedForeground, 16.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        if (value.isEmpty()) Txt(placeholder, style, c.placeholder, maxLines = if (singleLine) 1 else Int.MAX_VALUE)
+                        inner()
+                    }
                 }
             },
         )
     }
 }
 
-/** Screen header: back chevron, title with an optional subtitle, actions on the right. No bottom shadow, one hairline. */
+/**
+ * A screen header after T3's chat header (ChatHeader.tsx): 52dp, the leading control, the title in
+ * `text-sm font-medium` a step up for a phone, an optional muted line under it, actions at the end,
+ * one hairline under it.
+ */
 @Composable
 fun TopBar(
     title: String,
@@ -256,23 +355,31 @@ fun TopBar(
     subtitleColor: Color = Candy.colors.mutedForeground,
     onTitleClick: (() -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
+    titleLead: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val c = Candy.colors
     Column(Modifier.fillMaxWidth().background(c.background).windowInsetsPadding(WindowInsets.statusBars)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             when {
-                onBack != null -> IconButton(Icons.ChevronLeft, "Back", tint = c.foreground, size = 22.dp, onClick = onBack)
+                onBack != null -> IconButton(Icons.ChevronLeft, "Back", tint = c.foreground, size = 20.dp, onClick = onBack)
                 leading != null -> leading()
                 else -> Spacer(Modifier.width(12.dp))
             }
-            Column(
+            Row(
                 Modifier.weight(1f).clip(RoundedCornerShape(Radius.md))
                     .let { if (onTitleClick != null) it.clickable(role = Role.Button, onClickLabel = "Thread actions", onClick = onTitleClick) else it }
                     .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Txt(title, CandyType.title, c.foreground, maxLines = 1, modifier = Modifier.semantics { heading() })
-                if (subtitle != null) Txt(subtitle, CandyType.meta, subtitleColor, maxLines = 1)
+                if (titleLead != null) {
+                    titleLead()
+                    Spacer(Modifier.width(8.dp))
+                }
+                Column(Modifier.weight(1f, fill = false)) {
+                    Txt(title, CandyType.baseMedium.copy(fontSize = 15.sp, lineHeight = 20.sp), c.foreground, maxLines = 1, modifier = Modifier.semantics { heading() })
+                    if (subtitle != null) Txt(subtitle, CandyType.xs, subtitleColor, maxLines = 1)
+                }
             }
             actions()
         }
@@ -286,37 +393,75 @@ fun Divider(modifier: Modifier = Modifier, color: Color = Candy.colors.border) {
 }
 
 @Composable
-fun StatusDot(color: Color, modifier: Modifier = Modifier, size: Dp = 8.dp) {
+fun StatusDot(color: Color, modifier: Modifier = Modifier, size: Dp = 6.dp) {
     Box(modifier.size(size).background(color, CircleShape))
 }
 
-/** A small label with a tinted background, for statuses. */
+/** T3's badge (badge.tsx): `rounded-sm text-xs font-medium` on a tint of its colour. */
 @Composable
-fun Pill(text: String, color: Color, modifier: Modifier = Modifier) {
-    Txt(
-        text, CandyType.label, color, maxLines = 1,
-        modifier = modifier.background(color.copy(alpha = 0.12f), RoundedCornerShape(Radius.sm)).padding(horizontal = 6.dp, vertical = 2.dp),
-    )
-}
-
-/** An inline notice: what happened, and the action that fixes it. */
-@Composable
-fun Notice(text: String, color: Color, surface: Color, modifier: Modifier = Modifier, action: String? = null, onAction: () -> Unit = {}) {
+fun Pill(text: String, color: Color, modifier: Modifier = Modifier, icon: ImageVector? = null) {
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.lg)).background(surface).padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        modifier.clip(RoundedCornerShape(Radius.sm)).background(color.copy(alpha = color.alpha * 0.12f)).padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Txt(text, CandyType.small, color, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
-        if (action != null) CButton(action, kind = ButtonKind.GHOST, onClick = onAction)
+        if (icon != null) Icon(icon, color, 12.dp)
+        Txt(text, CandyType.xsMedium, color, maxLines = 1)
     }
 }
 
-/** A group of settings rows on a card with T3's border and radius. */
+enum class NoticeTone { NEUTRAL, INFO, WARNING, ERROR, SUCCESS }
+
+/**
+ * T3's alert (alert.tsx): `rounded-xl border px-3.5 py-3 text-sm`, an icon in the tone's colour,
+ * and the action that fixes it.
+ */
+@Composable
+fun Notice(text: String, color: Color, surface: Color, modifier: Modifier = Modifier, action: String? = null, onAction: () -> Unit = {}) {
+    val c = Candy.colors
+    val tone = when (color) {
+        c.errorForeground, c.error -> NoticeTone.ERROR
+        c.warningForeground, c.warning -> NoticeTone.WARNING
+        c.infoForeground, c.info -> NoticeTone.INFO
+        c.successForeground, c.success -> NoticeTone.SUCCESS
+        else -> NoticeTone.NEUTRAL
+    }
+    Alert(text, tone, modifier, action = action, onAction = onAction)
+}
+
+@Composable
+fun Alert(text: String, tone: NoticeTone, modifier: Modifier = Modifier, title: String? = null, action: String? = null, onAction: () -> Unit = {}) {
+    val c = Candy.colors
+    val shape = RoundedCornerShape(Radius.xl)
+    val (border, fill, fg, icon, iconTint) = when (tone) {
+        NoticeTone.NEUTRAL -> AlertLook(c.border, if (c.dark) c.input.copy(alpha = c.input.alpha * 0.32f) else Color.Transparent, c.foreground, Icons.Info, c.mutedForeground)
+        NoticeTone.INFO -> AlertLook(c.info.copy(alpha = 0.32f), c.info.copy(alpha = 0.04f), c.foreground, Icons.Info, c.info)
+        NoticeTone.WARNING -> AlertLook(c.warning.copy(alpha = 0.32f), c.warningSurface, c.warningForeground, Icons.TriangleAlert, c.warning)
+        NoticeTone.ERROR -> AlertLook(c.error.copy(alpha = 0.32f), c.errorSurface, c.errorForeground, Icons.CircleAlert, c.error)
+        NoticeTone.SUCCESS -> AlertLook(c.success.copy(alpha = 0.32f), c.success.copy(alpha = 0.04f), c.foreground, Icons.CircleCheck, c.success)
+    }
+    Row(
+        modifier.fillMaxWidth().clip(shape).background(fill).border(1.dp, border, shape).padding(start = 14.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, iconTint, 16.dp)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+            if (title != null) Txt(title, CandyType.smMedium, fg)
+            Txt(text, CandyType.sm, if (title != null) fg.copy(alpha = 0.8f) else fg)
+        }
+        if (action != null) CButton(action, kind = ButtonKind.GHOST, size = ButtonSize.SM, onClick = onAction)
+    }
+}
+
+private data class AlertLook(val border: Color, val fill: Color, val fg: Color, val icon: ImageVector, val iconTint: Color)
+
+/** A group of rows on T3's card (`rounded-xl border bg-card`). */
 @Composable
 fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val c = Candy.colors
     Column(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.lg)).background(c.card).border(1.dp, c.border, RoundedCornerShape(Radius.lg)),
+        modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.xl)).background(c.card).border(1.dp, c.border, RoundedCornerShape(Radius.xl)),
         content = content,
     )
 }
@@ -338,80 +483,268 @@ fun ListRow(
     Row(
         modifier.fillMaxWidth().heightIn(min = 48.dp)
             .let { if (onClick != null) it.clickable(enabled = enabled, role = Role.Button, onClick = onClick) else it }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (icon != null) Icon(icon, if (enabled) c.iconMuted else c.iconMuted.copy(alpha = 0.4f), 18.dp)
+        if (icon != null) Icon(icon, if (enabled) c.mutedForeground else c.mutedForeground.copy(alpha = 0.64f), 18.dp)
         Column(Modifier.weight(1f)) {
-            Txt(label, CandyType.ui, if (enabled) labelColor else c.mutedForeground, maxLines = 2)
-            if (detail != null) Txt(detail, CandyType.meta, c.mutedForeground, maxLines = 3)
+            Txt(label, CandyType.base, if (enabled) labelColor else c.mutedForeground, maxLines = 2)
+            if (detail != null) Txt(detail, CandyType.sm, c.mutedForeground, maxLines = 3)
         }
         if (trailing != null) trailing()
-        if (selected) Icon(Icons.Check, c.primary, 18.dp)
+        if (selected) Icon(Icons.Check, c.foreground, 18.dp)
     }
 }
 
 /**
- * A bottom sheet drawn over the screen: scrim, then a card from the bottom edge. Back and a tap on
- * the scrim close it. No slide animation; it appears on the next frame.
+ * T3's dialog as it sits on a phone (dialog.tsx `bottomStickOnMobile`): pinned to the bottom edge,
+ * `rounded-t-2xl`, popover fill, over the `dialog-backdrop`. It rises in over 200 ms; Back and a tap
+ * on the backdrop close it.
  */
 @Composable
-fun BoxScope.Sheet(onDismiss: () -> Unit, title: String? = null, content: @Composable ColumnScope.() -> Unit) {
+fun BoxScope.Sheet(
+    onDismiss: () -> Unit,
+    title: String? = null,
+    description: String? = null,
+    footer: (@Composable RowScope.() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val c = Candy.colors
     BackHandler(onBack = onDismiss)
-    Box(
-        Modifier.matchParentSize().background(c.scrim)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "Close", onClick = onDismiss),
-    )
-    Column(
-        Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = 640.dp)
-            .clip(RoundedCornerShape(topStart = Radius.composer, topEnd = Radius.composer)).background(c.card)
-            .border(1.dp, c.border, RoundedCornerShape(topStart = Radius.composer, topEnd = Radius.composer))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
-            .windowInsetsPadding(BottomInsets).padding(bottom = 8.dp),
+    val shown = remember { MutableTransitionState(false).apply { targetState = true } }
+    AnimatedVisibility(shown, enter = fadeIn(Motion.sheet()), modifier = Modifier.matchParentSize()) {
+        Box(
+            Modifier.fillMaxSize().background(c.scrim)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "Close", onClick = onDismiss),
+        )
+    }
+    val shape = RoundedCornerShape(topStart = Radius.xxl, topEnd = Radius.xxl)
+    AnimatedVisibility(
+        shown, Modifier.align(Alignment.BottomCenter),
+        enter = slideInVertically(Motion.sheet()) { it / 3 } + fadeIn(Motion.sheet()),
     ) {
-        Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(width = 36.dp, height = 4.dp).background(c.border, CircleShape))
+        Column(
+            Modifier.fillMaxWidth().heightIn(max = 640.dp)
+                .shadow(16.dp, shape, ambientColor = Color.Black.copy(alpha = 0.08f), spotColor = Color.Black.copy(alpha = 0.2f))
+                .clip(shape).background(c.popover).border(1.dp, c.border, shape)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .windowInsetsPadding(BottomInsets),
+        ) {
+            if (title != null || description != null) {
+                Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (title != null) Txt(title, CandyType.xl, c.foreground, maxLines = 2, modifier = Modifier.semantics { heading() })
+                    if (description != null) Txt(description, CandyType.sm, c.mutedForeground)
+                }
+            } else {
+                Spacer(Modifier.height(8.dp))
+            }
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), content = content)
+            if (footer != null) {
+                Divider()
+                Row(
+                    Modifier.fillMaxWidth().background(c.muted.copy(alpha = c.muted.alpha * 0.72f)).padding(horizontal = 24.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                    content = footer,
+                )
+            } else {
+                Spacer(Modifier.height(8.dp))
+            }
         }
-        if (title != null) {
-            Txt(title, CandyType.uiMedium, c.mutedForeground, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp).semantics { heading() })
-        }
-        Column(Modifier.verticalScroll(rememberScrollState()), content = content)
     }
 }
 
-/** A centred message for an empty screen, with an optional action. */
+/** Where a [Menu] opens against its trigger. */
+enum class MenuSide { BELOW, ABOVE }
+
+/**
+ * T3's menu popup (menu.tsx): `rounded-lg border bg-popover p-1` with its soft drop shadow, opening
+ * from the trigger it is placed next to. It fades and scales in from 95% over 150 ms, flips to the
+ * other side when there is no room, and keeps 8dp from the screen edges.
+ */
 @Composable
-fun EmptyState(title: String, body: String? = null, modifier: Modifier = Modifier, actions: @Composable RowScope.() -> Unit = {}) {
+fun Menu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    side: MenuSide = MenuSide.BELOW,
+    alignEnd: Boolean = false,
+    minWidth: Dp = 200.dp,
+    maxWidth: Dp = 320.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val c = Candy.colors
-    Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Txt(title, CandyType.heading, c.foreground)
-        if (body != null) Txt(body, CandyType.ui, c.mutedForeground)
+    val state = remember { MutableTransitionState(false) }
+    state.targetState = expanded
+    if (!state.currentState && !state.targetState && state.isIdle) return
+    val provider = remember(side, alignEnd) { MenuPosition(side, alignEnd) }
+    Popup(popupPositionProvider = provider, onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
+        val shape = RoundedCornerShape(Radius.lg)
+        val origin = TransformOrigin(if (alignEnd) 1f else 0f, if (provider.flipped xor (side == MenuSide.ABOVE)) 1f else 0f)
+        AnimatedVisibility(
+            state,
+            enter = fadeIn(Motion.fast()) + scaleIn(Motion.fast(), initialScale = 0.95f, transformOrigin = origin),
+            exit = fadeOut(Motion.fast()) + scaleOut(Motion.fast(), targetScale = 0.95f, transformOrigin = origin),
+        ) {
+            Column(
+                Modifier.padding(4.dp).widthIn(min = minWidth, max = maxWidth)
+                    .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = if (c.dark) 0.4f else 0.12f), spotColor = Color.Black.copy(alpha = if (c.dark) 0.6f else 0.3f))
+                    .clip(shape).background(c.popover).border(1.dp, c.border, shape)
+                    .heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(4.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+private class MenuPosition(private val side: MenuSide, private val alignEnd: Boolean) : PopupPositionProvider {
+    var flipped = false
+
+    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
+        val margin = (windowSize.width / 50).coerceIn(8, 24)
+        val below = anchorBounds.bottom
+        val above = anchorBounds.top - popupContentSize.height
+        val fitsBelow = below + popupContentSize.height <= windowSize.height - margin
+        val fitsAbove = above >= margin
+        val y = when (side) {
+            MenuSide.BELOW -> if (fitsBelow || !fitsAbove) below.also { flipped = false } else above.also { flipped = true }
+            MenuSide.ABOVE -> if (fitsAbove || !fitsBelow) above.also { flipped = false } else below.also { flipped = true }
+        }
+        val x = if (alignEnd) anchorBounds.right - popupContentSize.width else anchorBounds.left
+        return IntOffset(
+            x.coerceIn(margin, (windowSize.width - popupContentSize.width - margin).coerceAtLeast(margin)),
+            y.coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)),
+        )
+    }
+}
+
+/**
+ * A menu item (menu.tsx): `min-h-8 rounded-sm px-2 text-base` on touch with an 18dp muted icon; the
+ * highlighted (pressed) item takes `bg-accent`. [detail] adds the muted second line T3's pickers use.
+ */
+@Composable
+fun MenuItem(
+    label: String,
+    icon: ImageVector? = null,
+    detail: String? = null,
+    destructive: Boolean = false,
+    selected: Boolean = false,
+    enabled: Boolean = true,
+    iconTint: Color? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val c = Candy.colors
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val fg = if (destructive) c.errorForeground else c.foreground
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(RoundedCornerShape(Radius.sm)).background(if (pressed) c.accent else Color.Transparent)
+            .clickable(source, null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .graphicsLayer { alpha = if (enabled) 1f else 0.64f }
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = if (detail != null) Alignment.Top else Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (icon != null) Icon(icon, iconTint ?: if (destructive) fg else c.mutedForeground.copy(alpha = 0.8f), 18.dp, Modifier.padding(top = if (detail != null) 3.dp else 0.dp))
+        Column(Modifier.weight(1f)) {
+            Txt(label, CandyType.base, fg, maxLines = 2)
+            if (detail != null) Txt(detail, CandyType.sm, c.mutedForeground)
+        }
+        if (trailing != null) trailing()
+        if (selected) Icon(Icons.Check, c.foreground, 16.dp, Modifier.padding(top = if (detail != null) 4.dp else 0.dp))
+    }
+}
+
+/** `MenuSeparator`: `-mx-1 my-1 h-px bg-border`. */
+@Composable
+fun MenuSeparator() {
+    Box(Modifier.padding(vertical = 4.dp).fillMaxWidth().height(1.dp).background(Candy.colors.border))
+}
+
+/** `MenuGroupLabel`: `px-2 py-1.5 text-xs font-medium text-muted-foreground`. */
+@Composable
+fun MenuLabel(text: String) {
+    Txt(text, CandyType.xsMedium, Candy.colors.mutedForeground, maxLines = 1, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp))
+}
+
+/** T3's empty state (empty.tsx): a bordered icon tile, a title and a muted line, centred. */
+@Composable
+fun EmptyState(title: String, body: String? = null, modifier: Modifier = Modifier, icon: ImageVector? = null, actions: @Composable RowScope.() -> Unit = {}) {
+    val c = Candy.colors
+    Column(
+        modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (icon != null) {
+            Box(
+                Modifier.padding(bottom = 8.dp).size(36.dp).clip(RoundedCornerShape(Radius.md)).background(c.card).border(1.dp, c.border, RoundedCornerShape(Radius.md)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(icon, c.foreground, 18.dp) }
+        }
+        Txt(title, CandyType.baseMedium.copy(fontSize = 17.sp), c.foreground, align = TextAlign.Center)
+        if (body != null) Txt(body, CandyType.sm, c.mutedForeground, align = TextAlign.Center, modifier = Modifier.widthIn(max = 360.dp))
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = ButtonRow, content = actions)
     }
 }
 
-/** A sentence-case label over a group of settings. */
+/** A sentence-case label over a group of settings (SettingsSection's `text-xs font-medium`). */
 @Composable
 fun GroupLabel(text: String, modifier: Modifier = Modifier) {
-    Txt(text, CandyType.uiMedium, Candy.colors.mutedForeground, modifier = modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp).semantics { heading() })
+    Txt(text, CandyType.xsMedium, Candy.colors.mutedForeground, modifier = modifier.padding(start = 4.dp, top = 24.dp, bottom = 8.dp).semantics { heading() })
 }
 
-/** A monogram for a project: up to two letters on a muted square, like T3's `ProjectMonogram`. */
-@Composable
-fun Monogram(title: String, modifier: Modifier = Modifier) {
-    val c = Candy.colors
-    val letters = remember(title) {
-        val words = title.split(Regex("[^A-Za-z0-9]+")).filter { it.isNotEmpty() }
-        when {
-            words.size >= 2 -> "${words[0][0]}${words[1][0]}"
-            words.size == 1 -> words[0].take(2)
-            else -> "?"
-        }.uppercase()
+/** Tailwind's -600 and -400 shades for the 18 colours `projectIdentity.ts` picks from. */
+private val MonogramColors = listOf(
+    0xFF4A5565 to 0xFF99A1AF, 0xFFE7000B to 0xFFFF6467, 0xFFF54A00 to 0xFFFF8904, 0xFFE17100 to 0xFFFFBA00,
+    0xFFD08700 to 0xFFFDC700, 0xFF5EA500 to 0xFF9AE600, 0xFF00A63E to 0xFF05DF72, 0xFF009966 to 0xFF00D492,
+    0xFF009689 to 0xFF00D5BE, 0xFF0092B8 to 0xFF00D3F3, 0xFF0084D1 to 0xFF00BCFF, 0xFF155DFC to 0xFF51A2FF,
+    0xFF4F39F6 to 0xFF7C86FF, 0xFF8022FE to 0xFFA684FF, 0xFF9810FA to 0xFFC27AFF, 0xFFC800DE to 0xFFED6BFF,
+    0xFFE60076 to 0xFFFB64B6, 0xFFEC003F to 0xFFFF637E,
+)
+
+/** `projectIdentity.ts`: two letters and a colour index for a project title. */
+fun projectIdentity(title: String): Pair<String, Int> {
+    val normalized = Normalizer.normalize(title, Normalizer.Form.NFKC).trim()
+    val words = normalized.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+    var monogram = "PR"
+    words.firstOrNull()?.let { first ->
+        val head = first.substring(0, first.offsetByCodePoints(0, 1))
+        val rest = first.substring(head.length)
+        val digit = rest.firstOrNull { it.isDigit() }?.toString()
+        val second = digit ?: if (words.size > 1) words.last().take(1) else first.takeLast(1)
+        monogram = (head + second).uppercase().take(2)
     }
-    Box(modifier.sizeIn(minWidth = 20.dp, minHeight = 20.dp).clip(RoundedCornerShape(5.dp)).background(c.warningSurface), contentAlignment = Alignment.Center) {
-        Txt(letters, CandyType.meta.copy(fontSize = CandyType.meta.fontSize * 0.75f), c.warning, weight = FontWeight.Bold)
+    val seed = normalized.lowercase().ifEmpty { "project" }
+    var index = 0
+    seed.codePoints().forEach { index = (index * 31 + it) % MonogramColors.size }
+    return monogram to index
+}
+
+/**
+ * `ProjectMonogram` (ProjectMonogram.tsx): a 16dp tile at 25% radius, the project's colour at 14%
+ * behind bold monospace letters squeezed to 6 or 12 units of the 16.
+ */
+@Composable
+fun Monogram(title: String, modifier: Modifier = Modifier, size: Dp = 16.dp) {
+    val c = Candy.colors
+    val (letters, index) = remember(title) { projectIdentity(title) }
+    val color = Color(if (c.dark) MonogramColors[index].second else MonogramColors[index].first)
+    val measurer = rememberTextMeasurer(cacheSize = 4)
+    // 8.25px in the 16px tile whatever the system font scale, since the tile does not grow either.
+    val fontSize = with(LocalDensity.current) { 8.25.dp.toSp() }
+    val style = remember(color, fontSize) { TextStyle(color = color, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = fontSize) }
+    Canvas(modifier.size(size)) {
+        val unit = this.size.width / 16f
+        drawRoundRect(color.copy(alpha = 0.14f), size = this.size, cornerRadius = CornerRadius(4 * unit))
+        val layout = measurer.measure(letters, style)
+        val target = (if (letters.length == 1) 6f else 12f) * unit
+        val sx = if (layout.size.width > 0) target / layout.size.width else 1f
+        val sy = this.size.width / 16.dp.toPx()
+        scale(sx, sy, pivot = Offset(this.size.width / 2, this.size.height / 2)) {
+            drawText(layout, topLeft = Offset((this.size.width - layout.size.width) / 2f, (this.size.height - layout.size.height) / 2f))
+        }
     }
 }
 

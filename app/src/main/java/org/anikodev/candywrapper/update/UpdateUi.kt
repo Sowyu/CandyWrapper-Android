@@ -56,7 +56,7 @@ fun UpdateBanner(updater: Updater, modifier: Modifier = Modifier) {
                     UpdateStep.DOWNLOADING -> "Downloading ${s.percent}%"
                     UpdateStep.INSTALLING -> "Installing. Android closes the app when done; open it again."
                 }
-                Text(line, fontSize = 12.sp, color = if (s.installError != null) c.error else c.mutedForeground, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                Text(line, fontSize = 12.sp, color = if (s.installError != null) c.errorForeground else c.mutedForeground, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
             when (s.step) {
                 UpdateStep.IDLE -> {
@@ -94,7 +94,7 @@ fun UpdateSettingsRow(updater: Updater, modifier: Modifier = Modifier) {
                 s.checkedAtMs > 0 -> "Up to date"
                 else -> "Not checked yet"
             }
-            Text("Commit ${BuildConfig.COMMIT} · $status", fontSize = 12.sp, color = if (s.checkError != null) c.error else c.mutedForeground)
+            Text("Commit ${BuildConfig.COMMIT} · $status", fontSize = 12.sp, color = if (s.checkError != null) c.errorForeground else c.mutedForeground)
         }
         if (s.available != null && s.step == UpdateStep.IDLE) {
             TextButton(onClick = updater::install) { Text("Install", color = c.primary) }

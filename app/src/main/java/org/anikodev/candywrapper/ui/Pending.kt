@@ -61,7 +61,7 @@ fun ApprovalPanel(request: PendingRequest, busy: Boolean, onDecide: (String) -> 
         }
         val choices = row.approvalOptions?.takeIf { it.isNotEmpty() } ?: DEFAULT_CHOICES
         for (choice in choices) {
-            if (choice.warning != null) Txt(choice.warning!!, CandyType.meta, c.warning)
+            if (choice.warning != null) Txt(choice.warning!!, CandyType.meta, c.warningForeground)
         }
         Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
             for ((i, choice) in choices.withIndex()) {
@@ -154,11 +154,11 @@ private fun PanelCard(icon: androidx.compose.ui.graphics.vector.ImageVector, tit
     val c = Candy.colors
     Column(
         Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, bottom = 8.dp, top = 4.dp).clip(RoundedCornerShape(Radius.composer)).background(c.card)
-            .border(1.dp, c.warning.copy(alpha = 0.45f), RoundedCornerShape(Radius.composer)).padding(14.dp),
+            .border(1.dp, c.warningForeground.copy(alpha = 0.45f), RoundedCornerShape(Radius.composer)).padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, c.warning, 16.dp)
+            Icon(icon, c.warningForeground, 16.dp)
             Spacer(Modifier.width(8.dp))
             Txt(title, CandyType.uiMedium, c.foreground, modifier = Modifier.weight(1f))
             if (detail != null) Txt(detail, CandyType.meta, c.mutedForeground)

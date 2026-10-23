@@ -113,9 +113,9 @@ private fun FileHeader(file: DiffFile, collapsed: Boolean, onToggle: () -> Unit)
                 val renamed = file.oldPath?.let { "from $it" }
                 if (dir.isNotEmpty() || renamed != null) Txt(listOfNotNull(dir.ifEmpty { null }, renamed).joinToString(" · "), CandyType.meta, c.mutedForeground, maxLines = 1)
             }
-            Txt("+${file.additions}", CandyType.monoSmall, c.diffAddition)
+            Txt("+${file.additions}", CandyType.monoSmall, c.diffAdditionForeground)
             Spacer(Modifier.width(8.dp))
-            Txt("−${file.deletions}", CandyType.monoSmall, c.diffDeletion)
+            Txt("−${file.deletions}", CandyType.monoSmall, c.diffDeletionForeground)
         }
         Divider()
     }

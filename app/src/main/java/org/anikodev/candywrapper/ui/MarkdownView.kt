@@ -160,8 +160,8 @@ private fun highlight(code: String, tokens: List<CodeToken>, c: CandyColors): An
             TokenKind.NUMBER -> SpanStyle(color = c.synNumber)
             TokenKind.TYPE -> SpanStyle(color = c.synType)
             TokenKind.FUNCTION -> SpanStyle(color = c.synFunction)
-            TokenKind.ADDED -> SpanStyle(color = c.diffAddition, background = c.diffAdditionSurface)
-            TokenKind.REMOVED -> SpanStyle(color = c.diffDeletion, background = c.diffDeletionSurface)
+            TokenKind.ADDED -> SpanStyle(color = c.diffAdditionForeground, background = c.diffAdditionSurface)
+            TokenKind.REMOVED -> SpanStyle(color = c.diffDeletionForeground, background = c.diffDeletionSurface)
         }
         addStyle(style, t.start, t.end)
     }

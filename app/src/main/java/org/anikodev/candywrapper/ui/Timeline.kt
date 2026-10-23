@@ -89,8 +89,8 @@ fun RowView(item: TimelineRow, host: TimelineHost) {
             Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.lg)).background(Candy.colors.errorSurface).padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.CircleAlert, Candy.colors.error, 16.dp, Modifier.padding(top = 1.dp))
-            Txt(row.text ?: row.title, CandyType.small, Candy.colors.error)
+            Icon(Icons.CircleAlert, Candy.colors.errorForeground, 16.dp, Modifier.padding(top = 1.dp))
+            Txt(row.text ?: row.title, CandyType.small, Candy.colors.errorForeground)
         }
     }
 }
@@ -181,9 +181,9 @@ private fun CheckpointCard(row: TurnRow, host: TimelineHost) {
             for ((path, add, del) in files.take(8)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Txt(path.substringAfterLast('/'), CandyType.monoSmall, c.foreground, maxLines = 1, modifier = Modifier.weight(1f))
-                    Txt(add, CandyType.monoSmall, c.diffAddition)
+                    Txt(add, CandyType.monoSmall, c.diffAdditionForeground)
                     Spacer(Modifier.width(8.dp))
-                    Txt(del, CandyType.monoSmall, c.diffDeletion)
+                    Txt(del, CandyType.monoSmall, c.diffDeletionForeground)
                 }
             }
             if (files.size > 8) Txt("${files.size - 8} more", CandyType.meta, c.mutedForeground, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
@@ -215,7 +215,7 @@ fun ToolLine(row: TurnRow, host: TimelineHost) {
                 .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(toolIcon(row.type), if (row.failed) c.error else c.iconMuted, 15.dp)
+            Icon(toolIcon(row.type), if (row.failed) c.errorForeground else c.iconMuted, 15.dp)
             Spacer(Modifier.width(10.dp))
             Txt(row.title, CandyType.small, c.foreground, maxLines = 1)
             if (row.detail != null) {
@@ -224,7 +224,7 @@ fun ToolLine(row: TurnRow, host: TimelineHost) {
             } else {
                 Spacer(Modifier.weight(1f))
             }
-            if (row.running) Txt("running", CandyType.meta, c.info, modifier = Modifier.padding(start = 6.dp))
+            if (row.running) Txt("running", CandyType.meta, c.infoForeground, modifier = Modifier.padding(start = 6.dp))
             Icon(if (open) Icons.ChevronDown else Icons.ChevronRight, c.mutedForeground, 14.dp, Modifier.padding(start = 4.dp))
         }
         if (open) ToolDetail(row, host)
@@ -311,10 +311,10 @@ fun ToolGroupView(group: ToolGroup, host: TimelineHost) {
                 .clickable(role = Role.Button, onClickLabel = if (open) "Collapse" else "Expand") { host.toggle(group.key) }.padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Wrench, if (group.failed > 0) c.error else c.iconMuted, 15.dp)
+            Icon(Icons.Wrench, if (group.failed > 0) c.errorForeground else c.iconMuted, 15.dp)
             Spacer(Modifier.width(10.dp))
             Txt(summary, CandyType.small, c.mutedForeground, maxLines = 2, modifier = Modifier.weight(1f))
-            if (group.running) Txt("running", CandyType.meta, c.info, modifier = Modifier.padding(start = 6.dp))
+            if (group.running) Txt("running", CandyType.meta, c.infoForeground, modifier = Modifier.padding(start = 6.dp))
             Icon(if (open) Icons.ChevronDown else Icons.ChevronRight, c.mutedForeground, 14.dp, Modifier.padding(start = 4.dp))
         }
         if (open) Column(Modifier.padding(start = 12.dp)) { for (r in group.rows) ToolLine(r.row, host) }
@@ -344,7 +344,7 @@ private fun groupSummary(group: ToolGroup): String {
 fun WorkingRow(since: Long, now: Long, queued: Int) {
     val c = Candy.colors
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        StatusDot(c.info, size = 6.dp)
+        StatusDot(c.infoForeground, size = 6.dp)
         Spacer(Modifier.width(10.dp))
         val time = if (since > 0) " for ${duration(now - since)}" else ""
         Txt("Working$time" + if (queued > 0) " · $queued queued" else "", CandyType.small, c.mutedForeground)
@@ -361,7 +361,7 @@ fun DiffLineView(line: DiffLine, wrap: Boolean, numbers: Boolean = false) {
         org.anikodev.candywrapper.core.diff.LineKind.NOTE -> Triple(Color.Transparent, c.mutedForeground, "\\")
         org.anikodev.candywrapper.core.diff.LineKind.CONTEXT -> Triple(Color.Transparent, c.foreground, " ")
     }
-    val markColor = when (mark) { "+" -> c.diffAddition; "-" -> c.diffDeletion; else -> c.mutedForeground }
+    val markColor = when (mark) { "+" -> c.diffAdditionForeground; "-" -> c.diffDeletionForeground; else -> c.mutedForeground }
     Row(Modifier.fillMaxWidth().background(bg).padding(horizontal = 8.dp, vertical = 1.dp)) {
         if (numbers) {
             Txt(if (line.oldLine > 0) line.oldLine.toString() else "", CandyType.monoSmall, c.mutedForeground, align = TextAlign.End, modifier = Modifier.width(34.dp))

@@ -1,5 +1,7 @@
 package org.anikodev.candywrapper.ui
 
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
@@ -16,12 +18,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * CandyWrapper's palette, from CandyWrapper's docs/design-tokens.md (T3's resolved CSS tokens),
- * plus the plum of CandyWrapper's own send button. Read it with `Candy.colors` inside [CandyTheme].
+ * T3 Code's palette, from CandyWrapper's docs/design-tokens.md: every value is the colour Chromium
+ * resolves from T3's compiled CSS, in light, dark and the `[data-app-sidebar]` subtree. Names follow
+ * the CSS variables (`--muted-foreground` is [mutedForeground]). Read it with `Candy.colors` inside
+ * [CandyTheme].
  */
 @Immutable
 data class CandyColors(
@@ -29,33 +34,72 @@ data class CandyColors(
     val background: Color,
     val foreground: Color,
     val card: Color,
+    val popover: Color,
     val muted: Color,
     val mutedForeground: Color,
+    val secondary: Color,
+    /** `--secondary-label`: timestamps and counts. */
+    val secondaryLabel: Color,
+    /** `--accent`: hover and pressed fills, highlighted menu items. */
+    val accent: Color,
     val border: Color,
     /** `--input`: the border of fields and outlined controls. */
     val input: Color,
-    /** `--accent`: hover and pressed fills, selected rows. */
-    val accent: Color,
+    val ring: Color,
     val primary: Color,
     val primaryForeground: Color,
     val messageSurface: Color,
     val codeBackground: Color,
+    val iconMuted: Color,
+    val placeholder: Color,
+    /** Solid status colours (`--success`, dots and fills) and their text twins (`--success-foreground`). */
     val success: Color,
+    val successForeground: Color,
     val warning: Color,
-    val error: Color,
-    val info: Color,
+    val warningForeground: Color,
     val warningSurface: Color,
+    val error: Color,
+    val errorForeground: Color,
     val errorSurface: Color,
+    val info: Color,
+    val infoForeground: Color,
+    /** `--info` at the surface strength T3 uses for warning and error surfaces. */
     val infoSurface: Color,
     val diffAddition: Color,
+    val diffAdditionForeground: Color,
     val diffDeletion: Color,
+    val diffDeletionForeground: Color,
+    /** Diff line backgrounds: `--diff-addition` and `--diff-deletion` at pierre's 10% (light) and 14% (dark). */
     val diffAdditionSurface: Color,
     val diffDeletionSurface: Color,
-    val iconMuted: Color,
-    /** The send button: CandyWrapper's plum, a deliberate difference from T3's blue (design.md). */
+    val toolErrorIcon: Color,
+    val toolbarControl: Color,
+    // The `[data-app-sidebar]` subtree.
+    val sidebar: Color,
+    val sidebarForeground: Color,
+    val sidebarMutedForeground: Color,
+    val sidebarBorder: Color,
+    val sidebarIconColor: Color,
+    val sidebarRowHover: Color,
+    val sidebarRowActive: Color,
+    val sidebarRowSelected: Color,
+    val sidebarControlSurface: Color,
+    // Thread status label and dot colours (Sidebar.logic.ts:1180-1252).
+    val statusWorking: Color,
+    val statusWorkingDot: Color,
+    val statusApproval: Color,
+    val statusApprovalDot: Color,
+    val statusInput: Color,
+    val statusInputDot: Color,
+    val statusPlan: Color,
+    val statusPlanDot: Color,
+    val statusDone: Color,
+    val statusDoneDot: Color,
+    /** The send button: CandyWrapper's plum, a deliberate difference from T3's blue (CandyWrapper design.md). */
     val send: Color,
-    /** The overlay a pressed control draws over itself. */
+    /** The overlay a pressed control draws over itself: `--accent` strength over any surface. */
     val pressed: Color,
+    /** `dialog-backdrop`: the background at 60% (light) or 64% (dark), without the 4px blur. */
     val scrim: Color,
     // Syntax colours for code blocks, after T3's Shiki themes (github-light, github-dark).
     val synKeyword: Color,
@@ -71,30 +115,62 @@ private val Light = CandyColors(
     background = Color(0xFFFCFCFC),
     foreground = Color(0xFF27272A),
     card = Color(0xFFFFFFFF),
-    muted = Color(0xFFF4F4F5),
+    popover = Color(0xFFFFFFFF),
+    muted = Color(0xFFFAFAFA),
     mutedForeground = Color(0xFF71717B),
+    secondary = Color(0xFFFAFAFA),
+    secondaryLabel = Color(0xFF71717B),
+    accent = Color(0xFFF4F4F5),
     border = Color(0xFFE4E4E7),
     input = Color(0xFFD4D4D8),
-    accent = Color(0xFFF4F4F5),
+    ring = Color(0xFF1B4ED8),
     primary = Color(0xFF1B4ED8),
     primaryForeground = Color(0xFFFFFFFF),
     messageSurface = Color(0xFFF4F4F5),
-    codeBackground = Color(0xFFF7F7F8),
-    success = Color(0xFF007A55),
-    warning = Color(0xFFBB4D00),
-    error = Color(0xFFC10007),
-    info = Color(0xFF1447E6),
+    codeBackground = Color(0xFFFFFFFF),
+    iconMuted = Color(0xFF71717B),
+    placeholder = Color(0xFF71717B),
+    success = Color(0xFF00BC7D),
+    successForeground = Color(0xFF007A55),
+    warning = Color(0xFFFD9A00),
+    warningForeground = Color(0xFFBB4D00),
     warningSurface = Color(0x14FD9900),
+    error = Color(0xFFFB2C36),
+    errorForeground = Color(0xFFC10007),
     errorSurface = Color(0x14FB2C36),
+    info = Color(0xFF2B7FFF),
+    infoForeground = Color(0xFF1447E6),
     infoSurface = Color(0x142B7FFF),
-    diffAddition = Color(0xFF009966),
-    diffDeletion = Color(0xFFE7000B),
+    diffAddition = Color(0xFF00BC7D),
+    diffAdditionForeground = Color(0xFF009966),
+    diffDeletion = Color(0xFFFB2C36),
+    diffDeletionForeground = Color(0xFFE7000B),
     diffAdditionSurface = Color(0x1A00BC7D),
     diffDeletionSurface = Color(0x1AFB2C36),
-    iconMuted = Color(0xFF71717B),
+    toolErrorIcon = Color(0xFFFB2C36),
+    toolbarControl = Color(0xFFFFFFFF),
+    sidebar = Color(0xFFFAFAFA),
+    sidebarForeground = Color(0xFF27272A),
+    sidebarMutedForeground = Color(0xFF71717B),
+    sidebarBorder = Color(0xFFE4E4E7),
+    sidebarIconColor = Color(0xFFA8A8AE),
+    sidebarRowHover = Color(0xFFFCFCFC),
+    sidebarRowActive = Color(0xFFFFFFFF),
+    sidebarRowSelected = Color(0xFFFFFFFF),
+    sidebarControlSurface = Color(0xFFF4F4F5),
+    statusWorking = Color(0xFF0084D1),
+    statusWorkingDot = Color(0xFF00A6F4),
+    statusApproval = Color(0xFFE17100),
+    statusApprovalDot = Color(0xFFFD9A00),
+    statusInput = Color(0xFF4F39F6),
+    statusInputDot = Color(0xFF615FFF),
+    statusPlan = Color(0xFF8022FE),
+    statusPlanDot = Color(0xFF8E51FF),
+    statusDone = Color(0xFF009966),
+    statusDoneDot = Color(0xFF00BC7D),
     send = Color(0xFF8A4A7C),
     pressed = Color(0x0F18181B),
-    scrim = Color(0x52000000),
+    scrim = Color(0x99FCFCFC),
     synKeyword = Color(0xFFCF222E),
     synString = Color(0xFF0A3069),
     synComment = Color(0xFF6E7781),
@@ -108,30 +184,62 @@ private val Dark = CandyColors(
     background = Color(0xFF0A0A0A),
     foreground = Color(0xFFF5F5F5),
     card = Color(0xFF111111),
-    muted = Color(0xFF161616),
-    mutedForeground = Color(0xFF8E8E8E),
-    border = Color(0x1AFFFFFF),
-    input = Color(0x24FFFFFF),
-    accent = Color(0x0FFFFFFF),
+    popover = Color(0xFF111111),
+    muted = Color(0x08FFFFFF),
+    mutedForeground = Color(0xFF818181),
+    secondary = Color(0x08FFFFFF),
+    secondaryLabel = Color(0xFF818181),
+    accent = Color(0x0AFFFFFF),
+    border = Color(0x0FFFFFFF),
+    input = Color(0x14FFFFFF),
+    ring = Color(0xFF346BF1),
     primary = Color(0xFF346BF1),
     primaryForeground = Color(0xFFFFFFFF),
-    messageSurface = Color(0x0FFFFFFF),
+    messageSurface = Color(0x0AFFFFFF),
     codeBackground = Color(0xFF111111),
-    success = Color(0xFF00D492),
-    warning = Color(0xFFFFBA00),
-    error = Color(0xFFFF6467),
-    info = Color(0xFF51A2FF),
+    iconMuted = Color(0xFF818181),
+    placeholder = Color(0xFF818181),
+    success = Color(0xFF00BC7D),
+    successForeground = Color(0xFF00D492),
+    warning = Color(0xFFFD9A00),
+    warningForeground = Color(0xFFFFBA00),
     warningSurface = Color(0x29FD9900),
+    error = Color(0xFFFB414A),
+    errorForeground = Color(0xFFFF6467),
     errorSurface = Color(0x29FB414A),
+    info = Color(0xFF2B7FFF),
+    infoForeground = Color(0xFF51A2FF),
     infoSurface = Color(0x292B7FFF),
-    diffAddition = Color(0xFF00D492),
-    diffDeletion = Color(0xFFFF6467),
+    diffAddition = Color(0xFF00BC7D),
+    diffAdditionForeground = Color(0xFF00D492),
+    diffDeletion = Color(0xFFFB414A),
+    diffDeletionForeground = Color(0xFFFF6467),
     diffAdditionSurface = Color(0x2400BC7D),
     diffDeletionSurface = Color(0x24FB414A),
-    iconMuted = Color(0xFF8E8E8E),
+    toolErrorIcon = Color(0xFFFCA5A5),
+    toolbarControl = Color(0xFF111111),
+    sidebar = Color(0xFF000000),
+    sidebarForeground = Color(0xFFF1F3F7),
+    sidebarMutedForeground = Color(0xFFA3A3A3),
+    sidebarBorder = Color(0x14FFFFFF),
+    sidebarIconColor = Color(0xFF545454),
+    sidebarRowHover = Color(0x14F1F3F7),
+    sidebarRowActive = Color(0x1CF1F3F7),
+    sidebarRowSelected = Color(0x12F1F3F7),
+    sidebarControlSurface = Color(0xFF0A0A0A),
+    statusWorking = Color(0xCC74D4FF),
+    statusWorkingDot = Color(0xCC74D4FF),
+    statusApproval = Color(0xE6FFD230),
+    statusApprovalDot = Color(0xE6FFD230),
+    statusInput = Color(0xE6A3B3FF),
+    statusInputDot = Color(0xE6A3B3FF),
+    statusPlan = Color(0xE6C4B4FF),
+    statusPlanDot = Color(0xE6C4B4FF),
+    statusDone = Color(0xE65EE9B5),
+    statusDoneDot = Color(0xE65EE9B5),
     send = Color(0xFFA45E8C),
     pressed = Color(0x14FFFFFF),
-    scrim = Color(0x99000000),
+    scrim = Color(0xA30A0A0A),
     synKeyword = Color(0xFFFF7B72),
     synString = Color(0xFFA5D6FF),
     synComment = Color(0xFF8B949E),
@@ -140,30 +248,65 @@ private val Dark = CandyColors(
     synFunction = Color(0xFFD2A8FF),
 )
 
+/** Text trimmed to its line box the way CSS draws it, so a 20sp line is 20dp tall. */
+private val CssLines = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+
+private fun t(size: Int, line: Int, weight: FontWeight = FontWeight.Normal, family: FontFamily = FontFamily.Default) =
+    TextStyle(fontSize = size.sp, lineHeight = line.sp, fontWeight = weight, fontFamily = family, lineHeightStyle = CssLines)
+
 /**
- * Text styles on T3's scale (`--text-xs` 12, `--text-sm` 14, `--text-base` 16), one step larger
- * for chat text on a phone. Colour is set where the text is drawn.
+ * T3's type scale (`--text-*` in rem, 1rem = 16sp) in the system sans, Roboto on most phones, as T3
+ * uses the system stack. Where T3 sizes a control up for touch below its `sm` breakpoint (buttons
+ * and menu items take `text-base`), these use the touch size. Colour is set where text is drawn.
  */
 object CandyType {
-    val title = TextStyle(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp)
-    val heading = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.4).sp)
-    val body = TextStyle(fontSize = 15.sp, lineHeight = 22.sp)
-    val ui = TextStyle(fontSize = 14.sp, lineHeight = 20.sp)
-    val uiMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
-    val small = TextStyle(fontSize = 13.sp, lineHeight = 18.sp)
-    val meta = TextStyle(fontSize = 12.sp, lineHeight = 16.sp)
-    val label = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
-    val mono = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, fontFamily = FontFamily.Monospace)
-    val monoSmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontFamily = FontFamily.Monospace)
+    /** `text-3xs` is 10px; phones get `text-2xs` (11) so time labels stay readable. */
+    val xxs = t(11, 14)
+    val xs = t(12, 16)
+    val xsMedium = t(12, 16, FontWeight.Medium)
+    val sm = t(14, 20)
+    val smMedium = t(14, 20, FontWeight.Medium)
+    val base = t(16, 24)
+    val baseMedium = t(16, 24, FontWeight.Medium)
+    val lg = t(18, 28, FontWeight.SemiBold)
+    val xl = t(20, 28, FontWeight.SemiBold)
+    val xxl = t(24, 32, FontWeight.SemiBold)
+    /** Chat text: `.chat-markdown` and the composer are `text-sm` on desktop; a phone reads them a step up. */
+    val chat = t(15, 23)
+    val mono = t(13, 20, family = FontFamily.Monospace)
+    val monoSmall = t(12, 18, family = FontFamily.Monospace)
+
+    // Older names kept for the screens that have not moved to the scale names.
+    val title = t(16, 22, FontWeight.SemiBold)
+    val heading = xl
+    val body = chat
+    val ui = sm
+    val uiMedium = smMedium
+    val small = t(13, 18)
+    val meta = xs
+    val label = xsMedium
 }
 
-/** Corner radii from the token sheet: `--radius-sm` 6, `--radius-md` 8, `--radius` 10, `--radius-xl` 14, composer 18. */
+/** Corner radii: `--radius-sm` 6, `--control-radius`/`--radius-md` 8, `--radius` 10, `--radius-xl` 14, `--radius-2xl` 18. */
 object Radius {
+    val xs = 2.dp
     val sm = 6.dp
     val md = 8.dp
     val lg = 10.dp
     val xl = 14.dp
-    val composer = 18.dp
+    val xxl = 18.dp
+    /** The composer card, `rounded-[20px]`. */
+    val composer = 20.dp
+}
+
+/** T3's motion: Tailwind's 150 ms default and `cubic-bezier(.4,0,.2,1)`; sheets and the drawer take 200 ms. */
+object Motion {
+    val Ease = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
+    val EaseOut = CubicBezierEasing(0f, 0f, 0.2f, 1f)
+    const val FAST = 150
+    const val SHEET = 200
+    fun <T> fast() = tween<T>(FAST, easing = Ease)
+    fun <T> sheet() = tween<T>(SHEET, easing = Ease)
 }
 
 private val LocalCandyColors = staticCompositionLocalOf { Light }
@@ -175,6 +318,9 @@ object Candy {
 
 enum class ThemeChoice { SYSTEM, LIGHT, DARK }
 
+/** The palette a theme choice resolves to; screenshot tests pass it directly. */
+fun candyColors(dark: Boolean) = if (dark) Dark else Light
+
 @Composable
 fun CandyTheme(choice: ThemeChoice = ThemeChoice.SYSTEM, content: @Composable () -> Unit) {
     val dark = when (choice) {
@@ -182,16 +328,16 @@ fun CandyTheme(choice: ThemeChoice = ThemeChoice.SYSTEM, content: @Composable ()
         ThemeChoice.LIGHT -> false
         ThemeChoice.DARK -> true
     }
-    val c = if (dark) Dark else Light
+    val c = candyColors(dark)
     // Material stays only for the updater's card; every other screen draws with the kit in Kit.kt.
     val scheme = if (dark) {
         darkColorScheme(primary = c.primary, onPrimary = c.primaryForeground, background = c.background, onBackground = c.foreground,
             surface = c.background, onSurface = c.foreground, surfaceVariant = c.card, onSurfaceVariant = c.mutedForeground,
-            surfaceContainer = c.card, surfaceContainerHigh = c.card, outline = c.border, outlineVariant = c.border, error = c.error)
+            surfaceContainer = c.card, surfaceContainerHigh = c.card, outline = c.border, outlineVariant = c.border, error = c.errorForeground)
     } else {
         lightColorScheme(primary = c.primary, onPrimary = c.primaryForeground, background = c.background, onBackground = c.foreground,
             surface = c.background, onSurface = c.foreground, surfaceVariant = c.card, onSurfaceVariant = c.mutedForeground,
-            surfaceContainer = c.card, surfaceContainerHigh = c.card, outline = c.border, outlineVariant = c.border, error = c.error)
+            surfaceContainer = c.card, surfaceContainerHigh = c.card, outline = c.border, outlineVariant = c.border, error = c.errorForeground)
     }
     val indication = remember(c.pressed) { PressIndication(c.pressed) }
     val selection = remember(c.primary) { TextSelectionColors(c.primary, c.primary.copy(alpha = 0.3f)) }
