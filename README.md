@@ -17,6 +17,7 @@ Use the release APK when judging speed. Debug builds run Compose without optimiz
 - Pair a computer by pasting the link from `npx t3 pair`, or share it to the app.
 - Sign in to T3 Connect with an email code or a password, list the linked computers and connect to them.
 - T3 Code's sidebar as the main navigation: a drawer on phones (header button or a swipe from the left edge), always beside the thread on tablets and unfolded foldables. Pinned and active threads are cards with their status; snoozed and settled threads sit on shelves below. Long press a thread to pin, snooze, settle, rename, mark read or unread, or archive it, with Undo in the footer. Search, a project filter and the archived list are there too.
+- Settings > Sidebar > Working section folds threads that are busy without you into a Working shelf, newest send first, as T3's beta does; they come back to the top of the list when they need you.
 - The machine switcher at the top picks one computer or All machines, which lists every computer's threads together, merges the same repository across computers and names each thread's machine. With more than one computer it starts on All machines and remembers the choice.
 - Settings > Legacy features brings back T3's per-project sidebar and plan mode. Both are off by default, as in T3, and stay on the phone.
 - The app opens on the last thread you had open, drawn from the phone's copy before any network.

@@ -39,6 +39,13 @@ class SidebarShotTest {
         ) { ThreadShotTest.ThreadScreenFixture() }
     }
 
+    /** Settings > Working section on: working threads fold into the open Working shelf over Snoozed and Settled. */
+    private fun working(dark: Boolean) = shot("sidebar-working-phone", dark) {
+        SidebarPanel(Fixtures.all, Fixtures.environments, Fixtures.workingData, "e1:t1", Fixtures.NOW, SidebarActions(), shelves = Shelves(working = true))
+    }
+    @Test fun workingLight() = working(false)
+    @Test fun workingDark() = working(true)
+
     /** Settings > Legacy sidebar on: the per-project tree, here across both machines. */
     private fun legacy(dark: Boolean) = shot("sidebar-legacy-phone", dark) {
         LegacySidebarPanel(Fixtures.all, Fixtures.environments, Fixtures.allModel, "e1:t1", Fixtures.NOW, SidebarActions())
@@ -51,6 +58,8 @@ class SidebarShotTest {
         Column(Modifier.fillMaxSize().background(Candy.colors.background)) {
             TopBar("Settings", onBack = {})
             Column(Modifier.padding(horizontal = 16.dp)) {
+                GroupLabel("Sidebar")
+                SidebarSettings(workingSection = true, onWorkingSection = {})
                 GroupLabel("Legacy features")
                 LegacyFeatures(planMode = false, legacySidebar = false, onPlanMode = {}, onLegacySidebar = {})
                 GroupLabel("Turned on")

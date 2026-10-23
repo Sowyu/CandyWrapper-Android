@@ -119,6 +119,7 @@ class SidebarActions(
     val scopeProject: (String?) -> Unit = {},
     val toggleSettled: () -> Unit = {},
     val toggleSnoozed: () -> Unit = {},
+    val toggleWorking: () -> Unit = {},
     val undo: () -> Unit = {},
     /** Pull-to-refresh: check the connection now. */
     val refresh: () -> Unit = {},

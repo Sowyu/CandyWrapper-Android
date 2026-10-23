@@ -19,8 +19,8 @@ import org.anikodev.candywrapper.core.model.ThreadSummary
  * `threadSettled.ts`), pure so it runs off the main thread and in JUnit.
  */
 
-/** `SidebarSection` without the Working shelf, a beta setting T3 ships off. */
-enum class SidebarSection { PINNED, ACTIVE, SNOOZED, SETTLED }
+/** `SidebarSection`. [WORKING] is the Working shelf, a beta setting T3 ships off. */
+enum class SidebarSection { PINNED, ACTIVE, WORKING, SNOOZED, SETTLED }
 
 /** `resolveSidebarV2TopStatus`: what the card's status slot shows. Null shows the time instead. */
 enum class TopStatus { APPROVAL, INPUT, WORKING, WAITING, FAILED, LIMITED, WOKE, DONE }
@@ -162,13 +162,16 @@ data class SidebarSections(
     val snoozed: List<ThreadSummary> = emptyList(),
     val settled: List<ThreadSummary> = emptyList(),
     val nextWakeAt: Long = 0,
+    /** The Working shelf; empty while the setting is off. */
+    val working: List<ThreadSummary> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = pinned.isEmpty() && active.isEmpty() && snoozed.isEmpty() && settled.isEmpty()
-    val all: List<ThreadSummary> get() = pinned + active + snoozed + settled
+    val isEmpty: Boolean get() = pinned.isEmpty() && active.isEmpty() && working.isEmpty() && snoozed.isEmpty() && settled.isEmpty()
+    val all: List<ThreadSummary> get() = pinned + active + working + snoozed + settled
 
     fun sectionOf(key: String): SidebarSection? = when {
         pinned.any { it.key == key } -> SidebarSection.PINNED
         active.any { it.key == key } -> SidebarSection.ACTIVE
+        working.any { it.key == key } -> SidebarSection.WORKING
         snoozed.any { it.key == key } -> SidebarSection.SNOOZED
         settled.any { it.key == key } -> SidebarSection.SETTLED
         else -> null
@@ -194,12 +197,21 @@ data class SidebarData(
 object SidebarModel {
     /**
      * `partitionSidebarThreads`: [threads] filtered to [scopeKeys] (`env:project`, null for all)
-     * and split by section at [nowMs], each sorted as T3 sorts it.
+     * and split by section at [nowMs], each sorted as T3 sorts it. With [workingShelf] on, active
+     * threads that are working fold into the Working shelf, newest send first, and the rest of the
+     * inbox orders by when each came back to the user, [returnedAt] included (`InboxReturns`).
      */
-    fun partition(threads: Collection<ThreadSummary>, scopeKeys: Set<String>?, nowMs: Long): SidebarSections {
+    fun partition(
+        threads: Collection<ThreadSummary>,
+        scopeKeys: Set<String>?,
+        nowMs: Long,
+        workingShelf: Boolean = false,
+        returnedAt: (String) -> Long = { 0 },
+    ): SidebarSections {
         val order = ThreadOrder(nowMs)
         val pinned = ArrayList<ThreadSummary>()
         val active = ArrayList<ThreadSummary>()
+        val working = ArrayList<ThreadSummary>()
         val snoozed = ArrayList<ThreadSummary>()
         val settled = ArrayList<ThreadSummary>()
         for (t in threads) {
@@ -208,12 +220,22 @@ object SidebarModel {
                 0 -> pinned += t
                 2 -> snoozed += t
                 3 -> settled += t
-                else -> active += t
+                else -> if (workingShelf && t.working) working += t else active += t
             }
         }
-        for (list in listOf(pinned, active, snoozed, settled)) list.sortWith(order)
-        return SidebarSections(pinned, active, snoozed, settled, snoozed.minOfOrNull { it.snoozedUntil } ?: 0)
+        for (list in listOf(pinned, snoozed, settled)) list.sortWith(order)
+        if (workingShelf) {
+            active.sortWith(newestFirst { maxOf(it.returnTime, returnedAt(it.key)) })
+            working.sortWith(newestFirst { it.sendTime })
+        } else {
+            active.sortWith(order)
+        }
+        return SidebarSections(pinned, active, snoozed, settled, snoozed.minOfOrNull { it.snoozedUntil } ?: 0, working)
     }
+
+    /** threadInbox.ts `sortNewestFirst`: the time descending, then id, then computer. */
+    private fun newestFirst(time: (ThreadSummary) -> Long): Comparator<ThreadSummary> =
+        compareByDescending(time).thenBy { it.id }.thenBy { it.envId }
 
     /**
      * The whole model for [projects] and [threads] gathered from the scoped computers.
@@ -225,6 +247,8 @@ object SidebarModel {
         scopeKey: String?,
         nowMs: Long,
         preferredEnvId: String? = null,
+        workingShelf: Boolean = false,
+        returnedAt: (String) -> Long = { 0 },
     ): SidebarData {
         val groups = ProjectGrouping.sort(ProjectGrouping.build(projects, preferredEnvId), threads)
         val scope = scopeKey?.let { k -> groups.firstOrNull { it.key == k } }
@@ -232,7 +256,7 @@ object SidebarModel {
         for (g in groups) for (k in g.memberKeys) label[k] = g.label
         return SidebarData(
             groups = groups,
-            sections = partition(threads, scope?.memberKeys, nowMs),
+            sections = partition(threads, scope?.memberKeys, nowMs, workingShelf, returnedAt),
             projectLabel = label,
             projects = projects.associateBy { it.key },
             spansMachines = ProjectGrouping.spansEnvironments(groups),
@@ -276,12 +300,40 @@ object SidebarModel {
      */
     fun nextAfterPark(sections: SidebarSections, threadKey: String, parking: Set<String> = emptySet()): ThreadSummary? {
         val cards = sections.pinned + sections.active
-        val ordered = sections.pinned + sections.active + sections.snoozed + sections.settled
+        val ordered = sections.pinned + sections.active + sections.working + sections.snoozed + sections.settled
         val i = ordered.indexOfFirst { it.key == threadKey }
         if (i < 0) return null
         val cardKeys = cards.mapTo(HashSet()) { it.key }
         return (ordered.drop(i + 1) + ordered.take(i)).firstOrNull { it.key in cardKeys && it.key != threadKey && it.key !in parking }
     }
+}
+
+/**
+ * client-runtime `createInboxReturnTracker`: when this phone saw each thread leave the Working
+ * shelf, so the inbox puts it on top as it comes back. The first [observe] only takes a baseline,
+ * so turning the shelf on never reshuffles the inbox. Keep one for the app's life.
+ */
+class InboxReturns {
+    private var lastWorking: Set<String>? = null
+    private val returns = HashMap<String, Long>()
+
+    /** Every thread on each rebuild, or null while the shelf is off, which resets it. */
+    @Synchronized
+    fun observe(threads: Collection<ThreadSummary>?, nowMs: Long) {
+        if (threads == null) {
+            lastWorking = null
+            returns.clear()
+            return
+        }
+        val present = threads.mapTo(HashSet()) { it.key }
+        val working = threads.filter { it.working }.mapTo(HashSet()) { it.key }
+        returns.keys.retainAll(present)
+        for (key in lastWorking.orEmpty()) if (key in present && key !in working) returns[key] = nowMs
+        lastWorking = working
+    }
+
+    @Synchronized
+    fun returnedAt(key: String): Long = returns[key] ?: 0
 }
 
 /** What New thread does: start in one project, or ask which (T3's `new-thread-in` palette). */

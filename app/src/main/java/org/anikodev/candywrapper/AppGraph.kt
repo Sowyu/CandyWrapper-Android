@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import org.anikodev.candywrapper.core.sidebar.InboxReturns
 import org.anikodev.candywrapper.core.connect.ClerkAccount
 import org.anikodev.candywrapper.core.connect.ClerkClient
 import org.anikodev.candywrapper.core.connect.ConnectAuthorizer
@@ -86,6 +87,14 @@ class AppGraph(private val app: Application) {
     val settledShelf = UiSetting(SETTLED_SHELF, false)
     val snoozedShelf = UiSetting(SNOOZED_SHELF, false)
 
+    /** Settings > Working section: T3's beta `sidebarWorkingShelfEnabled`, off by default as in T3 and CandyWrapper. */
+    val workingSection = UiSetting(WORKING_SECTION, false)
+    /** Whether the Working shelf is open; closed by default, as CandyWrapper's. */
+    val workingShelf = UiSetting(WORKING_SHELF, false)
+
+    /** When threads left the Working shelf, for the inbox order; kept for the app's life, as T3 keeps it at module scope. */
+    val inboxReturns = InboxReturns()
+
     private val _account = MutableStateFlow<ClerkAccount?>(null)
     val account: StateFlow<ClerkAccount?> = _account
 
@@ -103,7 +112,7 @@ class AppGraph(private val app: Application) {
         lastEnvironmentId = db.uiValue(LAST_ENV)
         lastThreadId = db.uiValue(LAST_THREAD)
         _theme.value = db.uiValue(THEME)?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: ThemeChoice.SYSTEM
-        for (s in listOf(legacySidebar, planMode, settledShelf, snoozedShelf)) s.load()
+        for (s in listOf(legacySidebar, planMode, settledShelf, snoozedShelf, workingSection, workingShelf)) s.load()
         for (v in listOf(machineScope, projectScope)) v.load()
         environments.restore(envs, shells)
         Timeline.span("cache.loaded", start, "${envs.size} environments, ${shells.values.sumOf { it?.threads?.size ?: 0 }} threads")
@@ -205,6 +214,8 @@ class AppGraph(private val app: Application) {
         private const val PROJECT_SCOPE = "project_scope"
         private const val SETTLED_SHELF = "shelf_settled"
         private const val SNOOZED_SHELF = "shelf_snoozed"
+        private const val WORKING_SECTION = "working_section"
+        private const val WORKING_SHELF = "shelf_working"
         private const val LAST_ENV = "last_env"
         private const val THEME = "theme"
         private const val LAST_THREAD = "last_thread"

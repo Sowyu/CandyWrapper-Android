@@ -14,6 +14,7 @@ import org.anikodev.candywrapper.core.json.WireJson
 import org.anikodev.candywrapper.core.model.ProjectSummary
 import org.anikodev.candywrapper.core.model.StatusPill
 import org.anikodev.candywrapper.core.model.ThreadSummary
+import org.anikodev.candywrapper.core.sidebar.InboxReturns
 import org.anikodev.candywrapper.core.sidebar.NewThread
 import org.anikodev.candywrapper.core.sidebar.NewThreadTarget
 import org.anikodev.candywrapper.core.sidebar.ProjectGrouping
@@ -317,5 +318,79 @@ class SidebarLogicTest {
         // A filter by that project keeps both; a stale filter shows everything.
         assertEquals(2, SidebarModel.build(mac.projects + mini.projects, data.sections.all, "github.com/pingdotgg/t3code", now).sections.active.size)
         assertNull(SidebarModel.build(mac.projects + mini.projects, data.sections.all, "gone", now).scope)
+    }
+
+    // The Working shelf: threadInbox.ts isThreadWorking, sortWorkingThreadsBySend, sortInboxThreadsByReturn, createInboxReturnTracker
+
+    private val running = """"latestRunId":"r","status":"running","activeRunId":"r""""
+
+    @Test
+    fun workingShelfTakesBusyThreadsAndLeavesTheUsersOnes() {
+        val threads = listOf(
+            t("run", running),
+            t("parked", """"latestRunId":"r","status":"completed","pendingBackgroundTasks":[{"kind":"monitor"}]"""),
+            t("approval", """$running,"pendingRuntimeRequest":{"kind":"command"}"""),
+            t("failed", """"latestRunId":"r","status":"failed""""),
+            t("done", """"latestRunId":"r","status":"completed""""),
+            t("pinned", """$running,"pinnedAt":"2026-09-12T08:00:00.000Z""""),
+        )
+        val on = SidebarModel.partition(threads, null, now, workingShelf = true)
+        assertEquals(setOf("run", "parked"), on.working.map { it.id }.toSet())
+        assertEquals(setOf("approval", "failed", "done"), on.active.map { it.id }.toSet())
+        // Pinned threads stay pinned while they work.
+        assertEquals(listOf("pinned"), on.pinned.map { it.id })
+        assertEquals(on.working.map { it.key }.toSet(), on.all.filter { on.sectionOf(it.key) == org.anikodev.candywrapper.core.sidebar.SidebarSection.WORKING }.map { it.key }.toSet())
+
+        // Off, as T3 ships it: no shelf, and the inbox keeps its order keys.
+        val off = SidebarModel.partition(threads, null, now)
+        assertTrue(off.working.isEmpty())
+        assertEquals(5, off.active.size)
+    }
+
+    @Test
+    fun workingSortsByLastSendAndTheInboxByReturn() {
+        val sentLate = t("a", """$running,"latestUserAuthoredMessageAt":"2026-09-12T09:30:00.000Z","latestRunRequestedAt":"2026-09-12T09:00:00.000Z"""")
+        // No authored stamp on an older server: the run request stands in.
+        val requestedMid = t("b", """$running,"latestRunRequestedAt":"2026-09-12T09:10:00.000Z"""")
+        // An authored stamp of null does not fall back.
+        val neverSent = t("c", """$running,"latestUserAuthoredMessageAt":null,"latestRunRequestedAt":"2026-09-12T09:50:00.000Z"""")
+        assertEquals(listOf("a", "b", "c"), SidebarModel.partition(listOf(neverSent, requestedMid, sentLate), null, now, workingShelf = true).working.map { it.id })
+
+        val completedLate = t("x", """"latestRunId":"r","status":"completed","latestRunCompletedAt":"2026-09-12T09:40:00.000Z"""")
+        val unsettled = t("y", """"latestRunId":"r","status":"completed","latestRunCompletedAt":"2026-09-12T09:00:00.000Z","unsettledAt":"2026-09-12T09:45:00.000Z"""")
+        // Without the completed stamp, a finished run completes at updatedAt.
+        val legacy = t("z", """"latestRunId":"r","status":"completed","updatedAt":"2026-09-12T09:20:00.000Z"""")
+        val keyed = t("k", """"activeOrderKey":"a0"""")
+        assertEquals(listOf("y", "x", "z", "k"), SidebarModel.partition(listOf(keyed, legacy, completedLate, unsettled), null, now, workingShelf = true).active.map { it.id })
+        // A return this phone saw lifts a thread above the stamps.
+        assertEquals(listOf("k", "y", "x", "z"), SidebarModel.partition(listOf(keyed, legacy, completedLate, unsettled), null, now, workingShelf = true) { if (it == "local:k") now else 0 }.active.map { it.id })
+    }
+
+    @Test
+    fun inboxReturnsTakeABaselineThenMarkThreadsThatStopWorking() {
+        val returns = InboxReturns()
+        val busy = t("a", running)
+        val idle = t("a", """"latestRunId":"r","status":"completed"""")
+        // Turning the shelf on while a thread already finished does not count as a return.
+        returns.observe(listOf(idle), now)
+        assertEquals(0, returns.returnedAt("local:a"))
+        returns.observe(listOf(busy), now + 1_000)
+        assertEquals(0, returns.returnedAt("local:a"))
+        returns.observe(listOf(idle), now + 2_000)
+        assertEquals(now + 2_000, returns.returnedAt("local:a"))
+        // A thread that leaves the list is forgotten; turning the shelf off resets everything.
+        returns.observe(emptyList(), now + 3_000)
+        assertEquals(0, returns.returnedAt("local:a"))
+        returns.observe(listOf(busy), now + 4_000)
+        returns.observe(null, now + 5_000)
+        returns.observe(listOf(idle), now + 6_000)
+        assertEquals(0, returns.returnedAt("local:a"))
+    }
+
+    @Test
+    fun aClosedWorkingShelfKeepsTheOpenThread() {
+        val sections = SidebarModel.partition(listOf(t("a", running), t("b", running)), null, now, workingShelf = true)
+        assertEquals(listOf("local:b"), SidebarModel.visibleShelf(sections.working, expanded = false, openKey = "local:b").map { it.key })
+        assertEquals(2, SidebarModel.visibleShelf(sections.working, expanded = true, openKey = null).size)
     }
 }

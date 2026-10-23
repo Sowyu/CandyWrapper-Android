@@ -25,6 +25,7 @@ object Fixtures {
         id, project, title, pill, unread, section = section, orderKey = null, sortTime = NOW - ago * MIN, activityAt = NOW - ago * MIN,
         workingSince = if (pill == StatusPill.WORKING) NOW - 4 * MIN else 0, envId = env, branch = branch, providerInstanceId = provider,
         snoozedUntil = if (snoozedFor != 0L) NOW + snoozedFor * MIN else 0, visitedAt = NOW - (ago + 60) * MIN,
+        returnTime = NOW - ago * MIN, sendTime = NOW - ago * MIN,
     )
 
     private const val T3 = "github.com/pingdotgg/t3code"
@@ -71,6 +72,9 @@ object Fixtures {
 
     /** Both machines together. */
     val allData = SidebarModel.build(projects + miniProjects, threads + miniThreads, null, NOW)
+
+    /** Both machines with Settings > Working section on. */
+    val workingData = SidebarModel.build(projects + miniProjects, threads + miniThreads, null, NOW, workingShelf = true)
 
     val allModel = ThreadListModel.merge(listOf("anika’s MacBook Pro" to model, "mac-mini" to ThreadListModel.build(miniProjects.associateBy { it.id }, miniThreads, NOW)))
 

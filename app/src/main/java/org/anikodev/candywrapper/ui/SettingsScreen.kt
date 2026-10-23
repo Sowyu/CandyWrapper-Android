@@ -35,6 +35,7 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
     val theme by graph.theme.collectAsStateWithLifecycle()
     val legacySidebar by graph.legacySidebar.value.collectAsStateWithLifecycle()
     val planMode by graph.planMode.value.collectAsStateWithLifecycle()
+    val workingSection by graph.workingSection.value.collectAsStateWithLifecycle()
     val c = Candy.colors
     var selected by remember { mutableStateOf<EnvironmentSession?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -75,6 +76,9 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                     }
                 }
 
+                GroupLabel("Sidebar")
+                SidebarSettings(workingSection, graph.workingSection::set)
+
                 GroupLabel("Legacy features")
                 LegacyFeatures(planMode, legacySidebar, graph.planMode::set, graph.legacySidebar::set)
 
@@ -113,6 +117,18 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                 }
             }
         }
+    }
+}
+
+/** T3's General > Working section (beta), stored on this phone as T3 stores it per client. */
+@Composable
+fun SidebarSettings(workingSection: Boolean, onWorkingSection: (Boolean) -> Unit) {
+    Card {
+        SwitchRow(
+            "Working section", workingSection,
+            detail = "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you.",
+            icon = Icons.CircleDashed, onChange = onWorkingSection,
+        )
     }
 }
 

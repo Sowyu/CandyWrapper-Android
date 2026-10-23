@@ -247,10 +247,14 @@ private fun SidebarHost(
         if (legacy) return@produceState
         combine(scoped.map { it.threads }) { it.toList() }
             .combine(graph.projectScope.value) { models, key -> models to key }
+            .combine(graph.workingSection.value) { input, working -> Triple(input.first, input.second, working) }
             .combine(wake) { input, _ -> input }
             .conflate()
-            .map { (models, key) ->
-                SidebarModel.build(models.flatMap { it.projects }, models.flatMap { m -> m.groups.flatMap { it.threads } }, key, System.currentTimeMillis())
+            .map { (models, key, working) ->
+                val now = System.currentTimeMillis()
+                val threads = models.flatMap { m -> m.groups.flatMap { it.threads } }
+                graph.inboxReturns.observe(if (working) threads else null, now)
+                SidebarModel.build(models.flatMap { it.projects }, threads, key, now, workingShelf = working, returnedAt = graph.inboxReturns::returnedAt)
             }
             .flowOn(Dispatchers.Default)
             .collect { value = it }
@@ -263,6 +267,7 @@ private fun SidebarHost(
     }
     val settledOpen by graph.settledShelf.value.collectAsStateWithLifecycle()
     val snoozedOpen by graph.snoozedShelf.value.collectAsStateWithLifecycle()
+    val workingOpen by graph.workingShelf.value.collectAsStateWithLifecycle()
 
     fun closeOnPhone() { scope.launch { drawer.close() } }
 
@@ -368,6 +373,7 @@ private fun SidebarHost(
             scopeProject = { key -> graph.projectScope.set(key) },
             toggleSettled = { graph.settledShelf.set(!graph.settledShelf.value.value) },
             toggleSnoozed = { graph.snoozedShelf.set(!graph.snoozedShelf.value.value) },
+            toggleWorking = { graph.workingShelf.set(!graph.workingShelf.value.value) },
             undo = {
                 val pending = undo
                 undo = null
@@ -384,7 +390,7 @@ private fun SidebarHost(
     } else {
         SidebarPanel(
             current, environments, data, openKey, now, actions,
-            shelves = Shelves(snoozed = snoozedOpen, settled = settledOpen),
+            shelves = Shelves(snoozed = snoozedOpen, settled = settledOpen, working = workingOpen),
             archived = archived,
             undo = undo?.first,
         )

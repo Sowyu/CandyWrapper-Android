@@ -36,29 +36,35 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE env (id TEXT PRIMARY KEY, label TEXT NOT NULL, kind TEXT NOT NULL, http_base TEXT NOT NULL, ws_base TEXT NOT NULL, direct_routes TEXT, added_at INTEGER NOT NULL, shell_sequence INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE TABLE project (env_id TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, workspace_root TEXT NOT NULL, repo_key TEXT, repo_name TEXT, repo_short_name TEXT, updated_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (env_id, id)) WITHOUT ROWID")
-        db.execSQL("CREATE TABLE thread (env_id TEXT NOT NULL, id TEXT NOT NULL, project_id TEXT NOT NULL, title TEXT NOT NULL, pill TEXT NOT NULL, unread INTEGER NOT NULL, section INTEGER NOT NULL, order_key TEXT, sort_time INTEGER NOT NULL, activity_at INTEGER NOT NULL, working_since INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0, visited_at INTEGER NOT NULL DEFAULT 0, snoozed_until INTEGER NOT NULL DEFAULT 0, woke_at INTEGER NOT NULL DEFAULT 0, branch TEXT, provider_instance_id TEXT, PRIMARY KEY (env_id, id)) WITHOUT ROWID")
+        db.execSQL("CREATE TABLE thread (env_id TEXT NOT NULL, id TEXT NOT NULL, project_id TEXT NOT NULL, title TEXT NOT NULL, pill TEXT NOT NULL, unread INTEGER NOT NULL, section INTEGER NOT NULL, order_key TEXT, sort_time INTEGER NOT NULL, activity_at INTEGER NOT NULL, working_since INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0, visited_at INTEGER NOT NULL DEFAULT 0, snoozed_until INTEGER NOT NULL DEFAULT 0, woke_at INTEGER NOT NULL DEFAULT 0, branch TEXT, provider_instance_id TEXT, return_time INTEGER NOT NULL DEFAULT 0, send_time INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (env_id, id)) WITHOUT ROWID")
         db.execSQL("CREATE TABLE thread_cache (env_id TEXT NOT NULL, thread_id TEXT NOT NULL, data BLOB NOT NULL, saved_at INTEGER NOT NULL, PRIMARY KEY (env_id, thread_id)) WITHOUT ROWID")
         db.execSQL("CREATE TABLE secret (name TEXT PRIMARY KEY, data BLOB NOT NULL) WITHOUT ROWID")
         db.execSQL("CREATE TABLE ui (key TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion in 1..2) {
-            // Secrets, environments and the cached rows stay; the shell resumes from 0, so the next snapshot fills the new columns.
-            if (oldVersion == 1) {
-                // Version 2 keeps the visit watermarks.
-                db.execSQL("ALTER TABLE thread ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("ALTER TABLE thread ADD COLUMN visited_at INTEGER NOT NULL DEFAULT 0")
-            }
-            // Version 3 keeps snoozes apart from the section, and the repository identity that groups projects across computers.
-            for (c in listOf("snoozed_until INTEGER NOT NULL DEFAULT 0", "woke_at INTEGER NOT NULL DEFAULT 0", "branch TEXT", "provider_instance_id TEXT")) db.execSQL("ALTER TABLE thread ADD COLUMN $c")
-            for (c in listOf("repo_key TEXT", "repo_name TEXT", "repo_short_name TEXT", "updated_at INTEGER NOT NULL DEFAULT 0")) db.execSQL("ALTER TABLE project ADD COLUMN $c")
-            db.execSQL("UPDATE thread SET section = 1 WHERE section = 2")
+        if (oldVersion in 1..3) {
+            if (oldVersion < 3) upgradeTo3(db, oldVersion)
+            // Version 4 keeps the Working shelf's sort times; the next snapshot fills them.
+            for (c in listOf("return_time INTEGER NOT NULL DEFAULT 0", "send_time INTEGER NOT NULL DEFAULT 0")) db.execSQL("ALTER TABLE thread ADD COLUMN $c")
             db.execSQL("UPDATE env SET shell_sequence = 0")
             return
         }
         for (t in listOf("env", "project", "thread", "thread_cache", "secret", "ui")) db.execSQL("DROP TABLE IF EXISTS $t")
         onCreate(db)
+    }
+
+    private fun upgradeTo3(db: SQLiteDatabase, oldVersion: Int) {
+        // Secrets, environments and the cached rows stay; the shell resumes from 0, so the next snapshot fills the new columns.
+        if (oldVersion == 1) {
+            // Version 2 keeps the visit watermarks.
+            db.execSQL("ALTER TABLE thread ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE thread ADD COLUMN visited_at INTEGER NOT NULL DEFAULT 0")
+        }
+        // Version 3 keeps snoozes apart from the section, and the repository identity that groups projects across computers.
+        for (c in listOf("snoozed_until INTEGER NOT NULL DEFAULT 0", "woke_at INTEGER NOT NULL DEFAULT 0", "branch TEXT", "provider_instance_id TEXT")) db.execSQL("ALTER TABLE thread ADD COLUMN $c")
+        for (c in listOf("repo_key TEXT", "repo_name TEXT", "repo_short_name TEXT", "updated_at INTEGER NOT NULL DEFAULT 0")) db.execSQL("ALTER TABLE project ADD COLUMN $c")
+        db.execSQL("UPDATE thread SET section = 1 WHERE section = 2")
     }
 
     // Environments
@@ -106,7 +112,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
             }
         }
         val threads = db.rawQuery(
-            "SELECT id, project_id, title, pill, unread, section, order_key, sort_time, activity_at, working_since, updated_at, visited_at, snoozed_until, woke_at, branch, provider_instance_id FROM thread WHERE env_id = ?", arrayOf(envId),
+            "SELECT id, project_id, title, pill, unread, section, order_key, sort_time, activity_at, working_since, updated_at, visited_at, snoozed_until, woke_at, branch, provider_instance_id, return_time, send_time FROM thread WHERE env_id = ?", arrayOf(envId),
         ).use { c ->
             buildList {
                 while (c.moveToNext()) add(ThreadSummary(
@@ -116,6 +122,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
                     sortTime = c.getLong(7), activityAt = c.getLong(8), workingSince = c.getLong(9),
                     updatedAt = c.getLong(10), visitedAt = c.getLong(11), envId = envId,
                     snoozedUntil = c.getLong(12), wokeAt = c.getLong(13), branch = c.getString(14), providerInstanceId = c.getString(15),
+                    returnTime = c.getLong(16), sendTime = c.getLong(17),
                 ))
             }
         }
@@ -139,6 +146,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
             put("order_key", t.orderKey); put("sort_time", t.sortTime); put("activity_at", t.activityAt); put("working_since", t.workingSince)
             put("updated_at", t.updatedAt); put("visited_at", t.visitedAt)
             put("snoozed_until", t.snoozedUntil); put("woke_at", t.wokeAt); put("branch", t.branch); put("provider_instance_id", t.providerInstanceId)
+            put("return_time", t.returnTime); put("send_time", t.sendTime)
         }, SQLiteDatabase.CONFLICT_REPLACE)
         update("env", ContentValues().apply { put("shell_sequence", write.sequence) }, "id = ?", arrayOf(envId))
     }
@@ -198,7 +206,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
     }
 
     private companion object {
-        const val VERSION = 3
+        const val VERSION = 4
         const val THREADS_KEPT = 40
         val ROUTES = ListSerializer(DirectRoute.serializer())
     }

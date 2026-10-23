@@ -63,15 +63,16 @@ import org.anikodev.candywrapper.core.sidebar.Snooze
 import org.anikodev.candywrapper.core.sidebar.TopStatus
 import org.anikodev.candywrapper.core.sync.ConnectionState
 
-/** Whether the Snoozed and Settled shelves are open. */
+/** Whether the Working, Snoozed and Settled shelves are open. */
 @Immutable
-data class Shelves(val snoozed: Boolean = false, val settled: Boolean = false)
+data class Shelves(val snoozed: Boolean = false, val settled: Boolean = false, val working: Boolean = false)
 
 /**
  * T3's sidebar (Sidebar.tsx, the default since the flat redesign): the machine switcher where T3
  * puts its wordmark, the thread header (search, project filter, New thread), then one flat list of
- * every thread across the machine scope: pinned and active threads as cards, then the Snoozed and
- * Settled shelves as slim rows, held to the bottom while the list is short. Long press opens a
+ * every thread across the machine scope: pinned and active threads as cards, then, with Settings >
+ * Working section on, the Working shelf of cards, then the Snoozed and Settled shelves as slim rows.
+ * The shelves sit at the bottom while the list is short. Long press opens a
  * row's actions, since a phone has no hover.
  *
  * [data] is built off the main thread; null draws an empty list rather than a wrong empty state.
@@ -142,6 +143,7 @@ fun SidebarPanel(
                 )
                 else -> {
                     val s = data.sections
+                    val working = SidebarModel.visibleShelf(s.working, shelves.working, openKey)
                     val snoozed = SidebarModel.visibleShelf(s.snoozed, shelves.snoozed, openKey)
                     val settled = SidebarModel.visibleSettled(s.settled, settledCount, shelves.settled, openKey)
                     val hiddenSettled = if (shelves.settled) s.settled.size - settled.size else 0
@@ -157,6 +159,15 @@ fun SidebarPanel(
                         }
                         items(s.active, key = { it.key }, contentType = { "card" }) { t ->
                             CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.ACTIVE) }
+                        }
+                        if (s.working.isNotEmpty()) {
+                            item(key = "h:working", contentType = "shelf") {
+                                ShelfHeader(if (shelves.working) "Working" else "Working (${s.working.size})", shelves.working, info = false, onToggle = actions.toggleWorking)
+                            }
+                            // A closed shelf keeps the open thread, so sending folds it in without losing its row.
+                            items(working, key = { it.key }, contentType = { "card" }) { t ->
+                                CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.WORKING) }
+                            }
                         }
                         if (s.snoozed.isNotEmpty()) {
                             item(key = "h:snoozed", contentType = "shelf") {

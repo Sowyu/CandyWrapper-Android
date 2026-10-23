@@ -44,7 +44,18 @@ data class ThreadSummary(
     val branch: String? = null,
     /** `providerInstanceId`, for the provider glyph. */
     val providerInstanceId: String? = null,
+    /** When it last came back to the user (`sortInboxThreadsByReturn`): created, un-settled, run requested or completed. */
+    val returnTime: Long = 0,
+    /** When the user last sent to it (`sortWorkingThreadsBySend`): created, or the last authored message. */
+    val sendTime: Long = 0,
 ) {
+    /**
+     * client-runtime `isThreadWorking`: busy without the user, so the Working shelf takes it. A run
+     * in progress, or one parked on background work; approvals, questions and failures stay out.
+     */
+    // ponytail: no subagent-request or settled-plan checks (the shell drops subagent rows); add them if a waiting plan or subagent question hides in Working
+    val working: Boolean get() = pill == StatusPill.WORKING || pill == StatusPill.WAITING
+
     /** `env:thread`, unique across computers. */
     val key: String get() = "$envId:$id"
 
@@ -92,6 +103,12 @@ data class ThreadSummary(
                     ?: maxOf(latestUser, time(o.str("latestRunRequestedAt")), time(o.str("latestRunStartedAt")), time(o.str("latestRunCompletedAt"))).takeIf { it > 0 }
                     ?: updatedAt
             }
+            val requested = time(o.str("latestRunRequestedAt"))
+            val status = o.str("status")
+            // client-runtime `presentThreadShell`: servers without the field complete an idle or finished run at `updatedAt`.
+            val completed = if (o.containsKey("latestRunCompletedAt")) time(o.str("latestRunCompletedAt"))
+                else if (o.str("latestRunId") != null && status in setOf("idle", "completed", "interrupted", "failed", "cancelled", "rolled_back")) updatedAt else 0
+            val authored = if (o.containsKey("latestUserAuthoredMessageAt")) time(o.str("latestUserAuthoredMessageAt")) else requested
             val snoozedUntil = time(o.str("snoozedUntil"))
             val wokeEarly = if (snoozedUntil > 0) raisedHandAt(o, pill) else 0
             return ThreadSummary(
@@ -112,6 +129,8 @@ data class ThreadSummary(
                 wokeAt = wokeEarly,
                 branch = o.str("branch"),
                 providerInstanceId = o.str("providerInstanceId") ?: o.obj("modelSelection")?.str("instanceId"),
+                returnTime = maxOf(createdAt, time(o.str("unsettledAt")), requested, completed),
+                sendTime = maxOf(createdAt, authored),
             )
         }
 
