@@ -5,15 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,24 +34,23 @@ fun PairScreen(graph: AppGraph, nav: Navigator, prefill: String?) {
     val scope = rememberCoroutineScope()
     @Suppress("DEPRECATION") val clipboard = LocalClipboardManager.current
     val c = Candy.colors
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize().windowInsetsPadding(BottomInsets)) {
         TopBar("Pair a computer", onBack = { nav.pop() })
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("On the computer running T3 Code, run `npx t3 pair` and paste the link it prints. The phone must reach that address, on the same network or over Tailscale.",
-                color = c.mutedForeground)
-            OutlinedTextField(link, { link = it; error = null }, Modifier.fillMaxWidth(), label = { Text("Pairing link or host") },
-                minLines = 2, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-            OutlinedTextField(code, { code = it.uppercase(); error = null }, Modifier.fillMaxWidth(), singleLine = true,
-                label = { Text("Code, if the link has none") })
+            Txt("On the computer running T3 Code, run `npx t3 pair` and paste the link it prints. The phone must reach that address, on the same network or over Tailscale.",
+                CandyType.ui, c.mutedForeground)
+            TextInput(link, { link = it; error = null }, "http://192.168.1.20:3773/pair#…", label = "Pairing link or address",
+                singleLine = false, minLines = 2, keyboard = KeyboardOptions(keyboardType = KeyboardType.Uri), style = CandyType.mono)
+            TextInput(code, { code = it.uppercase(); error = null }, "Only if the link has none", label = "Pairing code")
             Row(horizontalArrangement = ButtonRow) {
-                Button(enabled = !busy && link.isNotBlank(), onClick = {
+                CButton(if (busy) "Pairing" else "Pair", kind = ButtonKind.PRIMARY, enabled = !busy && link.isNotBlank(), onClick = {
                     busy = true
                     error = null
                     scope.launch {
                         try {
                             val session = graph.environments.pair(link, code.ifBlank { null })
                             graph.rememberEnvironment(session.id)
-                            nav.replaceTop(Screen.Threads(session.id))
+                            nav.reset(Screen.Home(session.id))
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -64,10 +59,10 @@ fun PairScreen(graph: AppGraph, nav: Navigator, prefill: String?) {
                             busy = false
                         }
                     }
-                }) { Text(if (busy) "Pairing…" else "Pair") }
-                OutlinedButton(onClick = { clipboard.getText()?.text?.let { link = it.trim() } }) { Text("Paste") }
+                })
+                CButton("Paste", icon = Icons.Copy) { clipboard.getText()?.text?.let { link = it.trim() } }
             }
-            error?.let { Text(it, color = c.error) }
+            error?.let { Notice(it, c.error, c.errorSurface) }
         }
     }
 }

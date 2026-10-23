@@ -36,13 +36,20 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE env (id TEXT PRIMARY KEY, label TEXT NOT NULL, kind TEXT NOT NULL, http_base TEXT NOT NULL, ws_base TEXT NOT NULL, direct_routes TEXT, added_at INTEGER NOT NULL, shell_sequence INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE TABLE project (env_id TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, workspace_root TEXT NOT NULL, PRIMARY KEY (env_id, id)) WITHOUT ROWID")
-        db.execSQL("CREATE TABLE thread (env_id TEXT NOT NULL, id TEXT NOT NULL, project_id TEXT NOT NULL, title TEXT NOT NULL, pill TEXT NOT NULL, unread INTEGER NOT NULL, section INTEGER NOT NULL, order_key TEXT, sort_time INTEGER NOT NULL, activity_at INTEGER NOT NULL, working_since INTEGER NOT NULL, PRIMARY KEY (env_id, id)) WITHOUT ROWID")
+        db.execSQL("CREATE TABLE thread (env_id TEXT NOT NULL, id TEXT NOT NULL, project_id TEXT NOT NULL, title TEXT NOT NULL, pill TEXT NOT NULL, unread INTEGER NOT NULL, section INTEGER NOT NULL, order_key TEXT, sort_time INTEGER NOT NULL, activity_at INTEGER NOT NULL, working_since INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0, visited_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (env_id, id)) WITHOUT ROWID")
         db.execSQL("CREATE TABLE thread_cache (env_id TEXT NOT NULL, thread_id TEXT NOT NULL, data BLOB NOT NULL, saved_at INTEGER NOT NULL, PRIMARY KEY (env_id, thread_id)) WITHOUT ROWID")
         db.execSQL("CREATE TABLE secret (name TEXT PRIMARY KEY, data BLOB NOT NULL) WITHOUT ROWID")
         db.execSQL("CREATE TABLE ui (key TEXT PRIMARY KEY, value TEXT) WITHOUT ROWID")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion == 1) {
+            // Version 2 keeps the visit watermarks. Secrets and environments stay; the shell resumes from 0.
+            db.execSQL("ALTER TABLE thread ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE thread ADD COLUMN visited_at INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("UPDATE env SET shell_sequence = 0")
+            return
+        }
         for (t in listOf("env", "project", "thread", "thread_cache", "secret", "ui")) db.execSQL("DROP TABLE IF EXISTS $t")
         onCreate(db)
     }
@@ -87,7 +94,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
             buildList { while (c.moveToNext()) add(ProjectSummary(c.getString(0), c.getString(1), c.getString(2))) }
         }
         val threads = db.rawQuery(
-            "SELECT id, project_id, title, pill, unread, section, order_key, sort_time, activity_at, working_since FROM thread WHERE env_id = ?", arrayOf(envId),
+            "SELECT id, project_id, title, pill, unread, section, order_key, sort_time, activity_at, working_since, updated_at, visited_at FROM thread WHERE env_id = ?", arrayOf(envId),
         ).use { c ->
             buildList {
                 while (c.moveToNext()) add(ThreadSummary(
@@ -95,6 +102,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
                     pill = runCatching { StatusPill.valueOf(c.getString(3)) }.getOrDefault(StatusPill.NONE),
                     unread = c.getInt(4) != 0, section = c.getInt(5), orderKey = c.getString(6),
                     sortTime = c.getLong(7), activityAt = c.getLong(8), workingSince = c.getLong(9),
+                    updatedAt = c.getLong(10), visitedAt = c.getLong(11),
                 ))
             }
         }
@@ -115,6 +123,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
             put("env_id", envId); put("id", t.id); put("project_id", t.projectId); put("title", t.title)
             put("pill", t.pill.name); put("unread", if (t.unread) 1 else 0); put("section", t.section)
             put("order_key", t.orderKey); put("sort_time", t.sortTime); put("activity_at", t.activityAt); put("working_since", t.workingSince)
+            put("updated_at", t.updatedAt); put("visited_at", t.visitedAt)
         }, SQLiteDatabase.CONFLICT_REPLACE)
         update("env", ContentValues().apply { put("shell_sequence", write.sequence) }, "id = ?", arrayOf(envId))
     }
@@ -174,7 +183,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
     }
 
     private companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val THREADS_KEPT = 40
         val ROUTES = ListSerializer(DirectRoute.serializer())
     }

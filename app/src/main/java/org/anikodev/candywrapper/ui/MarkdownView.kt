@@ -16,8 +16,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Text
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.layout.Row as LayoutRow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.TextStyle
+import org.anikodev.candywrapper.core.markdown.CodeToken
+import org.anikodev.candywrapper.core.markdown.TokenKind
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -50,18 +56,14 @@ fun MarkdownBlocks(blocks: List<MdBlock>, modifier: Modifier = Modifier) {
 private fun Block(b: MdBlock) {
     val c = Candy.colors
     when (b) {
-        is MdBlock.Paragraph -> Text(rememberSpans(b.spans), fontSize = 15.sp, lineHeight = 22.sp, color = c.foreground)
-        is MdBlock.Heading -> Text(
-            rememberSpans(b.spans), color = c.foreground, fontWeight = FontWeight.SemiBold,
-            fontSize = when (b.level) { 1 -> 20.sp; 2 -> 18.sp; 3 -> 16.sp; else -> 15.sp },
-            modifier = Modifier.padding(top = 4.dp),
+        is MdBlock.Paragraph -> BasicText(rememberSpans(b.spans), style = CandyType.body.copy(color = c.foreground))
+        is MdBlock.Heading -> BasicText(
+            rememberSpans(b.spans),
+            Modifier.padding(top = 4.dp),
+            style = TextStyle(color = c.foreground, fontWeight = FontWeight.SemiBold,
+                fontSize = when (b.level) { 1 -> 20.sp; 2 -> 18.sp; 3 -> 16.sp; else -> 15.sp }, lineHeight = when (b.level) { 1 -> 28.sp; 2 -> 25.sp; else -> 22.sp }),
         )
-        is MdBlock.Code -> Box(
-            Modifier.fillMaxWidth().background(c.codeBackground, RoundedCornerShape(8.dp)).border(1.dp, c.border, RoundedCornerShape(8.dp))
-                .horizontalScroll(rememberScrollState()).padding(12.dp),
-        ) {
-            Text(b.code, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp, color = c.foreground, softWrap = false)
-        }
+        is MdBlock.Code -> CodeBlock(b)
         is MdBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(3.dp).fillMaxHeight().background(c.border, RoundedCornerShape(2.dp)))
             MarkdownBlocks(b.blocks, Modifier.padding(start = 10.dp))
@@ -75,15 +77,18 @@ private fun Block(b: MdBlock) {
                         b.ordered -> "${b.start + i}."
                         else -> "•"
                     }
-                    Text(marker, fontSize = 15.sp, lineHeight = 22.sp, color = c.mutedForeground, modifier = Modifier.widthIn(min = 22.dp))
+                    BasicText(marker, Modifier.widthIn(min = 22.dp), style = CandyType.body.copy(color = c.mutedForeground))
                     MarkdownBlocks(item.blocks)
                 }
             }
         }
-        is MdBlock.Table -> Box(Modifier.horizontalScroll(rememberScrollState())) {
-            Text(remember(b) { tableText(b) }, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp, color = c.foreground, softWrap = false)
+        is MdBlock.Table -> Box(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).border(1.dp, c.border, RoundedCornerShape(Radius.md))
+                .horizontalScroll(rememberScrollState()).padding(10.dp),
+        ) {
+            BasicText(remember(b) { tableText(b) }, style = CandyType.mono.copy(color = c.foreground), softWrap = false)
         }
-        MdBlock.Rule -> HorizontalDivider(color = c.border)
+        MdBlock.Rule -> Divider()
     }
 }
 
@@ -125,4 +130,39 @@ private fun tableText(t: MdBlock.Table): String {
         appendLine(widths.joinToString("  ") { "─".repeat(it) })
         text.drop(1).forEach { appendLine(line(it)) }
     }.trimEnd()
+}
+
+/** A fenced block: language label and copy on top, coloured code that scrolls sideways. */
+@Composable
+private fun CodeBlock(b: MdBlock.Code) {
+    val c = Candy.colors
+    @Suppress("DEPRECATION") val clipboard = LocalClipboardManager.current
+    val text = remember(b, c) { highlight(b.code, b.tokens, c) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.lg)).background(c.codeBackground).border(1.dp, c.border, RoundedCornerShape(Radius.lg))) {
+        LayoutRow(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Txt(b.language ?: "text", CandyType.meta, c.mutedForeground, modifier = Modifier.weight(1f))
+            IconButton(Icons.Copy, "Copy code", size = 15.dp) { clipboard.setText(AnnotatedString(b.code)) }
+        }
+        Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+            BasicText(text, style = CandyType.mono.copy(color = c.foreground), softWrap = false)
+        }
+    }
+}
+
+private fun highlight(code: String, tokens: List<CodeToken>, c: CandyColors): AnnotatedString = buildAnnotatedString {
+    append(code)
+    for (t in tokens) {
+        if (t.end > code.length || t.start >= t.end) continue
+        val style = when (t.kind) {
+            TokenKind.KEYWORD -> SpanStyle(color = c.synKeyword)
+            TokenKind.STRING -> SpanStyle(color = c.synString)
+            TokenKind.COMMENT -> SpanStyle(color = c.synComment, fontStyle = FontStyle.Italic)
+            TokenKind.NUMBER -> SpanStyle(color = c.synNumber)
+            TokenKind.TYPE -> SpanStyle(color = c.synType)
+            TokenKind.FUNCTION -> SpanStyle(color = c.synFunction)
+            TokenKind.ADDED -> SpanStyle(color = c.diffAddition, background = c.diffAdditionSurface)
+            TokenKind.REMOVED -> SpanStyle(color = c.diffDeletion, background = c.diffDeletionSurface)
+        }
+        addStyle(style, t.start, t.end)
+    }
 }

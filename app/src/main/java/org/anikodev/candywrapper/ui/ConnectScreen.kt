@@ -5,16 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -43,7 +38,7 @@ import org.anikodev.candywrapper.core.model.EnvironmentKind
 @Composable
 fun ConnectScreen(graph: AppGraph, nav: Navigator) {
     val account by graph.account.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize().windowInsetsPadding(BottomInsets)) {
         TopBar("T3 Connect", onBack = { nav.pop() })
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (account == null) SignIn(graph) else Account(graph, nav)
@@ -85,42 +80,42 @@ private fun SignIn(graph: AppGraph) {
         graph.refreshConnect()?.let { error = it }
     }
 
-    Text("Sign in with your T3 Connect account to reach the computers linked to it.", color = c.mutedForeground)
+    Txt("Sign in with your T3 Connect account to reach the computers linked to it.", CandyType.ui, c.mutedForeground)
     val pending = challenge
     if (pending == null) {
-        OutlinedTextField(email, { email = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Email") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
+        TextInput(email, { email = it }, "you@example.com", label = "Email", keyboard = KeyboardOptions(keyboardType = KeyboardType.Email))
         if (usePassword) {
-            OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Password") },
-                visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+            TextInput(password, { password = it }, "Password", label = "Password",
+                visual = PasswordVisualTransformation(), keyboard = KeyboardOptions(keyboardType = KeyboardType.Password))
         }
         Row(horizontalArrangement = ButtonRow) {
-            Button(enabled = busy == null && email.isNotBlank() && (!usePassword || password.isNotEmpty()), onClick = {
-                if (usePassword) run("Signing in…") {
+            CButton(busy ?: if (usePassword) "Sign in" else "Email me a code", kind = ButtonKind.PRIMARY,
+                enabled = busy == null && email.isNotBlank() && (!usePassword || password.isNotEmpty()), onClick = {
+                if (usePassword) run("Signing in") {
                     when (val step = graph.clerk.signIn(email, password)) {
                         is ClerkSignInStep.Complete -> finish()
                         is ClerkSignInStep.NeedsCode -> challenge = step.challenge
                     }
-                } else run("Sending code…") { challenge = graph.clerk.startEmailCode(email) }
-            }) { Text(busy ?: if (usePassword) "Sign in" else "Email me a code") }
-            TextButton(onClick = { usePassword = !usePassword }) { Text(if (usePassword) "Use an email code" else "Use a password") }
+                } else run("Sending code") { challenge = graph.clerk.startEmailCode(email) }
+            })
+            CButton(if (usePassword) "Use an email code" else "Use a password", kind = ButtonKind.GHOST) { usePassword = !usePassword }
         }
     } else {
-        Text("We sent a code to ${pending.sentTo ?: email}.", color = c.foreground)
-        OutlinedTextField(code, { code = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Code") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword))
+        Txt("We sent a code to ${pending.sentTo ?: email}.", CandyType.ui, c.foreground)
+        TextInput(code, { code = it.filter(Char::isDigit) }, "123456", label = "Code", keyboard = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            style = CandyType.mono)
         Row(horizontalArrangement = ButtonRow) {
-            Button(enabled = busy == null && code.length >= 6, onClick = {
-                run("Checking…") {
+            CButton(busy ?: "Continue", kind = ButtonKind.PRIMARY, enabled = busy == null && code.length >= 6, onClick = {
+                run("Checking") {
                     graph.clerk.verifyCode(code, pending)
                     finish()
                 }
-            }) { Text(busy ?: "Continue") }
-            OutlinedButton(enabled = busy == null, onClick = { run("Sending…") { graph.clerk.resendCode(pending) } }) { Text("Send again") }
-            TextButton(onClick = { challenge = null; code = "" }) { Text("Back") }
+            })
+            CButton("Send again", enabled = busy == null) { run("Sending") { graph.clerk.resendCode(pending) } }
+            CButton("Back", kind = ButtonKind.GHOST) { challenge = null; code = "" }
         }
     }
-    error?.let { Text(it, color = c.error) }
+    error?.let { Notice(it, c.error, c.errorSurface) }
 }
 
 @Composable
@@ -131,25 +126,25 @@ private fun Account(graph: AppGraph, nav: Navigator) {
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val c = Candy.colors
-    Text("Signed in as ${account?.identifier ?: "your account"}", fontWeight = FontWeight.Medium, color = c.foreground)
+    Txt("Signed in as ${account?.identifier ?: "your account"}", CandyType.uiMedium, c.foreground)
     val linked = sessions.filter { it.env.value.kind == EnvironmentKind.CONNECT }
-    Text(if (linked.isEmpty()) "No linked computers yet. Turn on T3 Connect in T3 Code's settings on your computer." else "${linked.size} linked computers",
-        color = c.mutedForeground, fontSize = 14.sp)
-    for (s in linked) {
-        Text("• ${s.env.value.label}", color = c.foreground, modifier = Modifier.rowClick {
-            graph.rememberEnvironment(s.id)
-            nav.push(Screen.Threads(s.id))
-        }.padding(vertical = 4.dp))
+    Txt(if (linked.isEmpty()) "No linked computers yet. Turn on T3 Connect in T3 Code's settings on your computer." else "${linked.size} linked computers",
+        CandyType.ui, c.mutedForeground)
+    if (linked.isNotEmpty()) Card {
+        for ((i, s) in linked.withIndex()) {
+            if (i > 0) Divider()
+            ListRow(s.env.value.label, icon = Icons.Laptop) { nav.reset(Screen.Home(s.id)) }
+        }
     }
     Row(horizontalArrangement = ButtonRow) {
-        Button(enabled = !busy, onClick = {
+        CButton(if (busy) "Refreshing" else "Refresh computers", kind = ButtonKind.PRIMARY, enabled = !busy, onClick = {
             busy = true
             scope.launch {
                 message = graph.refreshConnect() ?: "Up to date."
                 busy = false
             }
-        }) { Text(if (busy) "Refreshing…" else "Refresh computers") }
-        OutlinedButton(enabled = !busy, onClick = {
+        })
+        CButton("Sign out", enabled = !busy, onClick = {
             busy = true
             scope.launch {
                 graph.clerk.signOut()
@@ -157,7 +152,7 @@ private fun Account(graph: AppGraph, nav: Navigator) {
                 graph.accountChanged()
                 busy = false
             }
-        }) { Text("Sign out") }
+        })
     }
-    message?.let { Text(it, color = c.mutedForeground) }
+    message?.let { Txt(it, CandyType.small, c.mutedForeground) }
 }

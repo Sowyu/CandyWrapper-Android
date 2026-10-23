@@ -14,6 +14,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.anikodev.candywrapper.core.timing.Timeline
 import org.anikodev.candywrapper.ui.App
 import org.anikodev.candywrapper.ui.CandyTheme
+import org.anikodev.candywrapper.ui.ThemeChoice
+import android.graphics.Color
+import androidx.activity.SystemBarStyle
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
 
 class MainActivity : ComponentActivity() {
     private val graph get() = (application as CandyApp).graph
@@ -35,7 +40,14 @@ class MainActivity : ComponentActivity() {
         Timeline.mark("activity.cache.wait", if (readyInTime) "ready" else "timed out")
         setContent {
             val ready by graph.readyFlow.collectAsStateWithLifecycle()
-            CandyTheme {
+            val theme by graph.theme.collectAsStateWithLifecycle()
+            val dark = when (theme) { ThemeChoice.SYSTEM -> isSystemInDarkTheme(); ThemeChoice.LIGHT -> false; ThemeChoice.DARK -> true }
+            // Status and navigation bar icons follow the app's theme, which can differ from the system's.
+            LaunchedEffect(dark) {
+                val bar = if (dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                enableEdgeToEdge(bar, bar)
+            }
+            CandyTheme(theme) {
                 if (ready) App(graph, sharedText) { sharedText = null }
             }
         }

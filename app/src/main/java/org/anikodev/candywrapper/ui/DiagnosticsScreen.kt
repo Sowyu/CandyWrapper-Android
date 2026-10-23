@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -36,7 +35,7 @@ fun DiagnosticsScreen(graph: AppGraph, nav: Navigator) {
     val c = Candy.colors
     Column(Modifier.fillMaxSize()) {
         TopBar("Timing", onBack = { nav.pop() }, subtitle = "ms since process start") {
-            BarAction("Copy") {
+            IconButton(Icons.Copy, "Copy the report") {
                 val report = buildString {
                     appendLine("CandyWrapper ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) on ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE}")
                     sessions.forEach { appendLine("${it.env.value.label} [${it.env.value.kind}]: ${it.state.value.label()}, routes: ${it.env.value.directRoutes.joinToString { r -> r.kind }.ifEmpty { "none" }}") }
@@ -45,16 +44,15 @@ fun DiagnosticsScreen(graph: AppGraph, nav: Navigator) {
                 }
                 clipboard.setText(AnnotatedString(report))
             }
-            BarAction("Clear") { Timeline.clear() }
+            IconButton(Icons.Trash2, "Clear the marks") { Timeline.clear() }
         }
         LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 12.dp)) {
             item(key = "update") { UpdateSettingsRow(graph.updater) }
             items(sessions, key = { "env:" + it.id }) { s ->
-                Text("${s.env.value.label}: ${s.state.value.label()}", fontSize = 12.sp, color = c.foreground, modifier = Modifier.padding(vertical = 4.dp))
+                Txt("${s.env.value.label}: ${s.state.value.label()}", CandyType.meta, c.foreground, modifier = Modifier.padding(vertical = 4.dp))
             }
             items(marks.size, key = { "mark:$it:${marks[it].atMs}" }) { i ->
-                Text(marks[i].format(), fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = c.mutedForeground,
-                    modifier = Modifier.padding(vertical = 2.dp))
+                Txt(marks[i].format(), CandyType.monoSmall.copy(fontSize = 11.sp), c.mutedForeground, modifier = Modifier.padding(vertical = 2.dp))
             }
         }
     }

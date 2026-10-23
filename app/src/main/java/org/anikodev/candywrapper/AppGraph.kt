@@ -28,6 +28,7 @@ import org.anikodev.candywrapper.data.CacheDb
 import org.anikodev.candywrapper.data.KeystoreDPoPKey
 import org.anikodev.candywrapper.data.LazyDPoPKey
 import org.anikodev.candywrapper.data.SecretBox
+import org.anikodev.candywrapper.ui.ThemeChoice
 import org.anikodev.candywrapper.update.Updater
 
 /**
@@ -58,6 +59,10 @@ class AppGraph(private val app: Application) {
     @Volatile var lastEnvironmentId: String? = null
         private set
 
+    private val _theme = MutableStateFlow(ThemeChoice.SYSTEM)
+    /** Light, dark or follow the system; stored with the UI state. */
+    val theme: StateFlow<ThemeChoice> = _theme
+
     private val _account = MutableStateFlow<ClerkAccount?>(null)
     val account: StateFlow<ClerkAccount?> = _account
 
@@ -73,6 +78,7 @@ class AppGraph(private val app: Application) {
         val envs = db.environments()
         val shells = envs.associate { it.id to db.shell(it.id) }
         lastEnvironmentId = db.uiValue(LAST_ENV)
+        _theme.value = db.uiValue(THEME)?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: ThemeChoice.SYSTEM
         environments.restore(envs, shells)
         Timeline.span("cache.loaded", start, "${envs.size} environments, ${shells.values.sumOf { it?.threads?.size ?: 0 }} threads")
         _readyFlow.value = true
@@ -93,6 +99,11 @@ class AppGraph(private val app: Application) {
     fun rememberEnvironment(id: String?) {
         lastEnvironmentId = id
         scope.launch(Dispatchers.IO) { db.setUiValue(LAST_ENV, id) }
+    }
+
+    fun setTheme(choice: ThemeChoice) {
+        _theme.value = choice
+        scope.launch(Dispatchers.IO) { db.setUiValue(THEME, choice.name) }
     }
 
     /** After a sign-in or sign-out. */
@@ -125,5 +136,6 @@ class AppGraph(private val app: Application) {
 
     private companion object {
         const val LAST_ENV = "last_env"
+        const val THEME = "theme"
     }
 }

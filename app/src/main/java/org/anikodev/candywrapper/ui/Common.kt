@@ -1,77 +1,29 @@
 package org.anikodev.candywrapper.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.delay
 import org.anikodev.candywrapper.core.model.StatusPill
 import org.anikodev.candywrapper.core.sync.ConnectionState
-
-/** Screen header: a back button when [onBack] is set, a title, and actions on the right. */
-@Composable
-fun TopBar(title: String, onBack: (() -> Unit)? = null, subtitle: String? = null, actions: @Composable RowScope.() -> Unit = {}) {
-    val c = Candy.colors
-    Row(
-        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).heightIn(min = 56.dp).padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (onBack != null) {
-            TextButton(onClick = onBack) { Text("‹ Back", color = c.foreground) }
-        } else {
-            Box(Modifier.size(12.dp))
-        }
-        androidx.compose.foundation.layout.Column(Modifier.weight(1f).padding(horizontal = 4.dp)) {
-            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = c.foreground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (subtitle != null) Text(subtitle, fontSize = 12.sp, color = c.mutedForeground, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        actions()
-    }
-    HorizontalDivider(color = c.border)
-}
-
-/** One plain-text action for a [TopBar]. */
-@Composable
-fun BarAction(label: String, onClick: () -> Unit) {
-    TextButton(onClick = onClick) { Text(label, color = Candy.colors.primary) }
-}
 
 /** A short line naming the real connection state: the step in progress, the route, or the error. */
 fun ConnectionState.label(): String = when (this) {
     ConnectionState.Idle -> "Waiting to connect"
     is ConnectionState.Connecting -> "Connecting · ${step.substringBefore('[').replace('.', ' ')}"
-    is ConnectionState.Live -> "Live via ${if (route == "tunnel") "T3 Connect" else route} · ${connectMs} ms"
+    is ConnectionState.Live -> "Live via ${if (route == "tunnel") "T3 Connect" else route} · $connectMs ms"
     is ConnectionState.Offline -> message
     is ConnectionState.Blocked -> message
 }
@@ -83,12 +35,7 @@ fun ConnectionState.color(): Color = when (this) {
     else -> Candy.colors.mutedForeground
 }
 
-@Composable
-fun StatusDot(color: Color, modifier: Modifier = Modifier) {
-    Box(modifier.size(8.dp).background(color, CircleShape))
-}
-
-/** The sidebar pill. Ready threads show nothing, or a dot when unread. */
+/** The sidebar status (protocol.md 7.9). Ready threads show nothing, or a dot when unread. */
 @Composable
 fun PillChip(pill: StatusPill, unread: Boolean, workingSince: Long, now: Long) {
     val c = Candy.colors
@@ -100,14 +47,11 @@ fun PillChip(pill: StatusPill, unread: Boolean, workingSince: Long, now: Long) {
         StatusPill.FAILED -> "Failed" to c.error
         StatusPill.LIMITED -> "Limited" to c.warning
         StatusPill.READY, StatusPill.NONE -> {
-            if (unread) StatusDot(c.primary)
+            if (unread) Pill("Done", c.success)
             return
         }
     }
-    Text(
-        text, fontSize = 11.sp, color = color, fontWeight = FontWeight.Medium,
-        modifier = Modifier.background(color.copy(alpha = 0.12f), RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
-    )
+    Pill(text, color)
 }
 
 /** Sidebar time: "now", "5m", "3h", "2d" (apps/web/src/timestampFormat.ts:235-248, " ago" stripped). */
@@ -132,6 +76,17 @@ fun duration(ms: Long): String {
     }
 }
 
+private val timeOnly = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
+private val dayAndTime = DateTimeFormatter.ofPattern("EEE d MMM, HH:mm", Locale.getDefault())
+
+/** A message timestamp: "14:02" today, "Tue 21 Oct, 14:02" before. */
+fun clockTime(atMs: Long): String {
+    if (atMs <= 0) return ""
+    val zone = ZoneId.systemDefault()
+    val at = Instant.ofEpochMilli(atMs).atZone(zone)
+    return if (at.toLocalDate() == LocalDate.now(zone)) timeOnly.format(at) else dayAndTime.format(at)
+}
+
 /**
  * Wall-clock time that advances on the minute while the screen is started, for time labels.
  * Nothing ticks in the background.
@@ -150,19 +105,3 @@ fun rememberMinuteClock(): Long {
     }
     return now
 }
-
-/** A full-width row that reacts to taps. */
-fun Modifier.rowClick(onClick: () -> Unit) = clickable(role = Role.Button, onClick = onClick)
-
-@Composable
-fun SectionLabel(text: String) {
-    Text(text.uppercase(), fontSize = 11.sp, letterSpacing = 0.6.sp, color = Candy.colors.mutedForeground, fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp))
-}
-
-@Composable
-fun Hint(text: String, color: Color = Candy.colors.mutedForeground) {
-    Text(text, fontSize = 13.sp, color = color, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-}
-
-val ButtonRow = Arrangement.spacedBy(8.dp)
