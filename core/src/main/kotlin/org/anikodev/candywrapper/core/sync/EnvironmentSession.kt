@@ -179,7 +179,8 @@ class EnvironmentSession(
     suspend fun archivedThreads(): ThreadListModel {
         val start = Timeline.nowMs()
         val result = request("orchestration.getArchivedShellSnapshot") as? JsonObject ?: return ThreadListModel()
-        return ShellProjection.archivedModel(result).also { Timeline.span("$trace.archived.loaded", start, "${it.threadCount} threads") }
+        // Hundreds of archived threads take a moment to read and sort; keep it off the caller's thread.
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { ShellProjection.archivedModel(result) }.also { Timeline.span("$trace.archived.loaded", start, "${it.threadCount} threads") }
     }
 
     /**
