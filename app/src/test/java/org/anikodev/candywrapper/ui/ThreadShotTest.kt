@@ -1,6 +1,8 @@
 package org.anikodev.candywrapper.ui
 
 import androidx.compose.runtime.Composable
+import org.anikodev.candywrapper.core.stash.StashEntry
+import org.anikodev.candywrapper.core.stash.StashImage
 import org.anikodev.candywrapper.core.sync.ThreadSession
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -31,7 +33,7 @@ class ThreadShotTest {
             text = text, onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
             running = running, canStop = running, files = emptyList(), busy = null, error = null, connected = true,
             onModel = {}, onRuntimeMode = {}, onTogglePlan = null, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
-            onStop = {}, onDismissError = {}, locked = locked, trayAbove = tray,
+            onStop = {}, onDismissError = {}, locked = locked, trayAbove = tray, onStash = {},
         )
     }
 
@@ -86,10 +88,35 @@ class ThreadShotTest {
                 text = "", onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "plan"), server = ThreadFixtures.server,
                 running = false, canStop = false, files = emptyList(), busy = null, error = null, connected = true,
                 onModel = {}, onRuntimeMode = {}, onTogglePlan = {}, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
-                onStop = {}, onDismissError = {},
+                onStop = {}, onDismissError = {}, onStash = {},
             )
         }
     }
+    /** The stash open over a composer holding a draft: restore, swap or delete each prompt. */
+    private fun stash(dark: Boolean) = shot("stash-menu-phone", dark) {
+        val min = 60_000L
+        val entries = listOf(
+            StashEntry("s1", Fixtures.NOW - 2 * min, "Make the tablet layout match the desktop sidebar, then run the screenshot tests"),
+            StashEntry("s2", Fixtures.NOW - 47 * min, "Why does the relay drop idle sockets after a minute?", listOf(StashImage("i1", "relay.png", "image/png", 1, "i1"), StashImage("i2", "logcat.png", "image/png", 1, "i2"))),
+            StashEntry("s3", Fixtures.NOW - 26 * 60 * min, "", listOf(StashImage("i3", "mockup.png", "image/png", 1, "i3"))),
+        )
+        Thread {
+            StashList(entries, Fixtures.NOW, canSwap = true, onRestore = {}, onSwap = {}, onDelete = {}, onClose = {})
+            ThreadComposer(text = "Bump the Compose BOM", tray = true)
+        }
+    }
+    @Test fun stashLight() = stash(false)
+    @Test fun stashDark() = stash(true)
+
+    /** The stash's count tab over the composer. */
+    private fun stashTab(dark: Boolean) = shot("stash-tab-phone", dark) {
+        Thread {
+            StashTab(3) {}
+            ThreadComposer(tray = true)
+        }
+    }
+    @Test fun stashTabLight() = stashTab(false)
+
     @Test fun planModeLight() = planMode(false)
     @Test fun planModeDark() = planMode(true)
     @Test fun drawerDark() = drawer(true)

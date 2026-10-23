@@ -155,10 +155,12 @@ fun Composer(
     locked: String? = null,
     initialMenu: Picker? = null,
     trayAbove: Boolean = false,
+    onStash: (() -> Unit)? = null,
 ) {
     val c = Candy.colors
     var menu by remember { mutableStateOf(initialMenu) }
     val canSend = connected && busy == null && locked == null && (text.isNotBlank() || files.isNotEmpty())
+    val canStash = busy == null && locked == null && (text.isNotBlank() || files.isNotEmpty())
     val provider = settings.model?.let { server.provider(it.instanceId) }
     val shape = RoundedCornerShape(Radius.composer)
     Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp, top = if (trayAbove) 0.dp else 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -221,6 +223,11 @@ fun Composer(
                         Box {
                             IconButton(Icons.Ellipsis, "More composer controls", enabled = locked == null, size = 16.dp, box = 32.dp) { menu = Picker.ACCESS }
                             Menu(menu == Picker.ACCESS, { menu = null }, side = MenuSide.ABOVE, minWidth = 260.dp) {
+                                // On a phone the stash button would push ⋯ out of the strip, so Stash lives here.
+                                if (onStash != null) {
+                                    MenuItem("Stash prompt", Icons.Bookmark, detail = "Keep it for later and clear the composer", enabled = canStash) { menu = null; onStash() }
+                                    MenuSeparator()
+                                }
                                 if (onTogglePlan != null) {
                                     MenuLabel("Mode")
                                     MenuItem("Chat", selected = settings.interactionMode != "plan") { menu = null; if (settings.interactionMode == "plan") onTogglePlan() }
@@ -243,6 +250,7 @@ fun Composer(
                         if (onTogglePlan != null) PlanToggle(settings.interactionMode == "plan", locked == null, onTogglePlan)
                     }
                 }
+                if (onStash != null && !compact) IconButton(Icons.Bookmark, "Stash prompt", enabled = canStash, size = 18.dp, onClick = onStash)
                 IconButton(Icons.Paperclip, "Attach images", enabled = connected && busy == null && locked == null, size = 18.dp, onClick = onAttach)
                 val stop = running && canStop && text.isBlank() && files.isEmpty()
                 Box {

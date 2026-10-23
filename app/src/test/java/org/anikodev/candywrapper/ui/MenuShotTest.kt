@@ -44,7 +44,7 @@ class MenuShotTest {
             text = "", onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
             running = false, canStop = false, files = emptyList(), busy = null, error = null, connected = true,
             onModel = {}, onRuntimeMode = {}, onTogglePlan = {}, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
-            onStop = {}, onDismissError = {}, initialMenu = menu,
+            onStop = {}, onDismissError = {}, initialMenu = menu, onStash = {},
         )
     }
 

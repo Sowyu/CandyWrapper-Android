@@ -45,6 +45,8 @@ CandyWrapper for Android copies T3 Code's desktop app, adapted to a phone. T3's 
 | The draft block, pull request and terminal badges on cards | Not built | They need data the shell does not carry here |
 | The Working section setting syncs with the desktop client settings | Settings > Sidebar > Working section, stored on the phone, off by default as in T3 and CandyWrapper | Client settings live in each client |
 | The expanded image preview dims the page | A black full-screen viewer with pinch zoom, swipe down to close, Save and Share | A phone's photo viewer conventions; there is no pointer to zoom with |
+| Stash with a keyboard shortcut; the list restores or deletes | Stash prompt in the composer's ⋯ on a phone (a bookmark button from 520dp); each row also has Swap, which stashes the draft and restores the prompt in one step | No keyboard on a phone; swap was asked for |
+| The stash lives in browser storage, images as data URLs | `prompt-stash/stash.json` in the app's files, replaced atomically, images as files beside it, as CandyWrapper stores them | A phone keeps images as files |
 | Add project in the thread header | Not built | Adding a project needs a folder on the computer |
 | Parking the open thread with no card left opens a new thread | Opens the empty state, with the sidebar | A phone lands in the sidebar to pick the next one |
 | The machine switcher (not in T3) | Lists All machines first when there are several, and starts there | The phone reads several computers; T3's sidebar always merges every connected environment |

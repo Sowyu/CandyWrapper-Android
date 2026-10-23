@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.anikodev.candywrapper.core.sidebar.InboxReturns
+import org.anikodev.candywrapper.core.stash.PromptStash
 import org.anikodev.candywrapper.core.connect.ClerkAccount
 import org.anikodev.candywrapper.core.connect.ClerkClient
 import org.anikodev.candywrapper.core.connect.ConnectAuthorizer
@@ -56,6 +57,9 @@ class AppGraph(private val app: Application) {
         private set
 
     val updater by lazy { Updater(app, scope) }
+
+    /** The prompt stash, on this phone only. Its file is read on the boot thread. */
+    val stash by lazy { PromptStash(java.io.File(app.filesDir, "prompt-stash")) }
 
     /** The thread's images on disk and in memory (data/ImageStore). */
     val images by lazy { ImageStore(app.cacheDir) }
@@ -118,6 +122,7 @@ class AppGraph(private val app: Application) {
         _theme.value = db.uiValue(THEME)?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: ThemeChoice.SYSTEM
         for (s in listOf(legacySidebar, planMode, settledShelf, snoozedShelf, workingSection, workingShelf)) s.load()
         for (v in listOf(machineScope, projectScope)) v.load()
+        stash.entries
         environments.restore(envs, shells)
         Timeline.span("cache.loaded", start, "${envs.size} environments, ${shells.values.sumOf { it?.threads?.size ?: 0 }} threads")
         // The first frame shows the last thread, so its rows are read here, while the activity is created.

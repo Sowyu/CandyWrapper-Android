@@ -1,5 +1,10 @@
 package org.anikodev.candywrapper.ui
 
+import org.anikodev.candywrapper.core.stash.Restored
+import org.anikodev.candywrapper.core.stash.NewStashImage
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -154,6 +159,46 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
         }
     }
 
+    // The prompt stash (T3's composer stash): the draft goes in with one tap; a restore puts it back.
+    val stashed by graph.stash.entries.collectAsStateWithLifecycle()
+    var stashOpen by remember { mutableStateOf(false) }
+
+    fun takeIn(restored: Restored, replace: Boolean) {
+        draft = when {
+            replace || draft.isBlank() -> restored.prompt
+            restored.prompt.isEmpty() -> draft
+            else -> draft.trimEnd() + "\n\n" + restored.prompt
+        }
+        if (replace) files.clear()
+        for (img in restored.images) if (files.size < MAX_PICKS) files += PickedFile(Uri.fromFile(img.file), img.name, img.mimeType, img.sizeBytes)
+    }
+
+    suspend fun draftImages(picked: List<PickedFile>) = picked.map { NewStashImage(it.name, it.mimeType, readPick(context, it)) }
+
+    fun stashDraft() {
+        val text = draft.trim()
+        val picked = files.toList()
+        if (text.isEmpty() && picked.isEmpty()) return
+        act(null) {
+            withContext(Dispatchers.IO) { graph.stash.stash(text, draftImages(picked)) }
+            // Cleared only once the entry is on disk, so a failed write keeps the prompt where it was.
+            draft = ""
+            files.clear()
+        }
+    }
+
+    fun restoreStashed(id: String, swap: Boolean) {
+        val text = draft.trim()
+        val picked = files.toList()
+        stashOpen = false
+        act(null) {
+            val restored = withContext(Dispatchers.IO) {
+                if (swap) graph.stash.swap(id, text, draftImages(picked)) else graph.stash.restore(id)
+            } ?: return@act
+            takeIn(restored, replace = swap)
+        }
+    }
+
     val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_PICKS)) { uris ->
         for (uri in uris) if (files.size < MAX_PICKS) describePick(context, uri)?.let { if (files.none { f -> f.uri == uri }) files += it }
     }
@@ -244,6 +289,17 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                     onSteer = { runId -> act(null) { thread.steerQueued(runId) } },
                     onCancel = { runId -> act(null) { thread.cancelQueued(runId) } })
             }
+            if (stashOpen && pending == null) {
+                StashList(
+                    stashed, System.currentTimeMillis(), canSwap = draft.isNotBlank() || files.isNotEmpty(),
+                    onRestore = { restoreStashed(it.id, swap = false) },
+                    onSwap = { restoreStashed(it.id, swap = true) },
+                    onDelete = { e -> act(null) { withContext(Dispatchers.IO) { graph.stash.delete(e.id) } } },
+                    onClose = { stashOpen = false },
+                )
+            } else if (pending == null) {
+                StashTab(stashed.size) { stashOpen = true }
+            }
             Composer(
                 text = draft, onText = { draft = it },
                 settings = settings,
@@ -271,7 +327,8 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                     pending != null -> APPROVAL_LOCK
                     else -> null
                 },
-                trayAbove = pending != null || state.queued.isNotEmpty(),
+                trayAbove = pending != null || state.queued.isNotEmpty() || stashOpen || stashed.isNotEmpty(),
+                onStash = ::stashDraft,
             )
         }
         if (renaming) {
