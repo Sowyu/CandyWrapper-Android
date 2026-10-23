@@ -457,7 +457,8 @@ private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSinc
     val scrolledUp by remember { derivedStateOf { listState.firstVisibleItemIndex > 4 } }
     val scope = rememberCoroutineScope()
 
-    Box(Modifier.fillMaxSize()) {
+    // Redesign's frosted composer and pills blur the thread as it scrolls under them.
+    Box(Modifier.fillMaxSize().backdropSource()) {
         LazyColumn(
             Modifier.fillMaxSize()
                 // Rows fade out over the last stretch above the screen's edge instead of being cut.

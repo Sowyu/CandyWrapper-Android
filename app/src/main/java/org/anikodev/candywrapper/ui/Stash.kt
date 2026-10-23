@@ -70,7 +70,7 @@ fun StashList(
 ) {
     val c = Candy.colors
     val shape = RoundedCornerShape(Radius.xl)
-    val panel = if (c.redesign) Modifier.padding(start = 12.dp + Pill.inset, end = 12.dp + Pill.inset, bottom = Pill.gap).floating(shape, c.popover.copy(alpha = 0.9f)).clip(shape)
+    val panel = if (c.redesign) Modifier.padding(start = 12.dp + Pill.inset, end = 12.dp + Pill.inset, bottom = Pill.gap).floating(shape).clip(shape)
         else Modifier.padding(start = 12.dp, end = 12.dp, bottom = 6.dp).clip(shape).background(c.card).border(1.dp, c.border, shape)
     Column(Modifier.fillMaxWidth().then(panel)) {
         Row(

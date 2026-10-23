@@ -63,7 +63,9 @@ Redesign (Experimental):
 - The first frame never waits for the art. The panel paints the solid background, the art renders on `Dispatchers.Default` once the panel has a size, then fades in over 150 ms. Mark `redesign.art` reports the size and whether it came from the cache.
 - One canvas pixel is one 2dp dot, drawn scaled with nearest filtering: about 360 KB for a phone, 1 MB for a 1280x800dp tablet, plus a blurred copy at a sixteenth of that. The canvas is a PNG in the cache keyed by picture, size and background, at most five kept, so later starts decode it instead of rendering.
 - A keyboard or a shorter page never re-renders: the canvas keeps the tallest height seen at a width. A rotation renders once, 150 ms after the size settles.
-- The art sits in its own graphics layer, so a scrolling list never redraws it. Frosted panes draw the pre-blurred copy; nothing blurs per frame.
+- The art sits in its own graphics layer, so a scrolling list never redraws it.
+- Glass, Android 12 and later: the thread records itself into a graphics layer as it draws, which costs a display list, not pixels. Each frosted pane keeps a small layer that replays the art and that recording at a quarter of its pixels plus a 24dp margin, with a RenderEffect blur and saturation on it, and draws it scaled up under its fill. A pane re-records only when it moves or resizes or the content behind it draws; an idle screen records and blurs nothing. Android 11 and older draw the art's pre-blurred copy.
+- Estimate for a phone (Pixel 7 class, 2.625x) scrolling a thread with Stash, the queue, the composer, the machine row, Waiting and the header pill: six offscreen buffers of about 95,000 pixels in all, under 4% of the screen, each blurred with a radius of about 8 buffer pixels, plus six display lists of a few operations re-recorded on the main thread. That is an estimated 0.5 to 1 ms of render-thread and GPU time per scrolling frame against 8.3 ms at 120 Hz; not measured on a device yet.
 - The dot grids and the rolling digits move only on the shared second ticker.
 
 ## Measured on the JVM

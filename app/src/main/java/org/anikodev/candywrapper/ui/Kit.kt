@@ -638,7 +638,9 @@ fun Menu(
             Column(
                 Modifier.padding(4.dp).widthIn(min = minWidth, max = maxWidth)
                     .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = if (c.dark) 0.4f else 0.12f), spotColor = Color.Black.copy(alpha = if (c.dark) 0.6f else 0.3f))
-                    .clip(shape).background(c.popover).border(1.dp, if (c.redesign) c.rim() else c.border, shape)
+                    // Redesign's menus are glass: the popover at 90% over the blurred art (PopupSurface's frosted pane).
+                    .let { if (c.redesign) it.frost(shape, c.popover.copy(alpha = 0.9f)).clip(shape) else it.clip(shape).background(c.popover) }
+                    .border(1.dp, if (c.redesign) c.rim() else c.border, shape)
                     .heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(4.dp),
                 content = content,
             )

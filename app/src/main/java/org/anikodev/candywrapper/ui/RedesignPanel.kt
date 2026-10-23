@@ -2,6 +2,24 @@ package org.anikodev.candywrapper.ui
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
+import android.view.View
+import androidx.annotation.RequiresApi
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.RenderEffect
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -127,6 +145,124 @@ class ArtHost {
     /** The background's share over the art now, animated; read it while drawing. */
     var scrim: State<Float> = mutableStateOf(1f)
         internal set
+
+    // What frosted panes repaint under themselves (Android 12 and later): the panel's own paint and the
+    // content layers registered with [backdropSource]. Plain fields, set while composing or laying out.
+    internal var reveal: State<Float> = mutableStateOf(1f)
+    internal var background = Color.Black
+    internal var band = Color.Black
+    internal var blend = 0f
+    internal var panelSize = Size.Zero
+    internal var view: View? = null
+    /** The panel's top left on screen; panes in menus live in other windows, so everything lines up in screen pixels. */
+    internal var screenOrigin = Offset.Zero
+    internal val sources = mutableListOf<BackdropSource>()
+    internal val panes = LinkedHashSet<FrostPane>()
+
+    /** The panel's paint at its own origin: the art, the page's scrim and the band fading down from the top. */
+    internal fun drawPanel(scope: DrawScope, opaque: Boolean) = with(scope) {
+        val size = panelSize
+        if (opaque) drawRect(background, size = size)
+        art?.let { a ->
+            drawImage(a.image, dstSize = IntSize(a.image.width * dotPx, a.image.height * dotPx), alpha = reveal.value, filterQuality = FilterQuality.None)
+        }
+        val s = scrim.value
+        if (s > 0f) drawRect(background, alpha = s, size = size)
+        // The band's colour over the panel's top, all of it at the edge and falling off at once ((1 - t)^2).
+        val stops = Array(11) { i -> val t = i / 10f; t to band.copy(alpha = (1 - t) * (1 - t)) }
+        drawRect(Brush.verticalGradient(*stops, startY = 0f, endY = blend), size = Size(size.width, blend))
+    }
+
+    /** Something behind the panes drew or moved: each pane re-records its blurred copy, in this frame. */
+    internal fun changed() = Snapshot.withoutReadObservation { for (p in panes) p.record() }
+}
+
+/** A content layer frosted panes blur, placed at [at] on screen. */
+class BackdropSource internal constructor(val layer: GraphicsLayer) {
+    internal var at = Offset.Zero
+}
+
+/**
+ * Marks content that scrolls under Redesign's frosted panes, such as the thread under the composer.
+ * It draws through a graphics layer the panes replay under themselves; on Android 11 and older, or
+ * outside Redesign, it is a no-op.
+ */
+@Composable
+fun Modifier.backdropSource(): Modifier {
+    val host = LocalArtHost.current
+    if (host == null || Build.VERSION.SDK_INT < 31) return this
+    val layer = rememberGraphicsLayer()
+    val source = remember(host, layer) { BackdropSource(layer) }
+    DisposableEffect(host, source) {
+        host.sources += source
+        onDispose { host.sources -= source; host.changed() }
+    }
+    return onGloballyPositioned { val p = it.positionOnScreen(); if (p != source.at) { source.at = p; host.changed() } }
+        .drawWithContent {
+            layer.record { this@drawWithContent.drawContent() }
+            drawLayer(layer)
+            host.changed()
+        }
+}
+
+/**
+ * One frosted pane's blurred copy of what is behind it. The copy is recorded at a quarter of the
+ * pane's pixels plus a margin, so the blur runs on a small offscreen buffer and samples real content
+ * at the edges, then draws scaled up under the pane's tint. It re-records only when the pane moves
+ * or resizes or something behind it draws; an idle screen records nothing. A pane in a menu lives in
+ * another window and repaints the panel itself, since a window must not draw another's layers.
+ */
+@RequiresApi(31)
+internal class FrostPane(private val host: ArtHost, private val layer: GraphicsLayer, private val sameWindow: Boolean) {
+    var at = Offset.Zero
+    var size = Size.Zero
+    var density: Density? = null
+    var layoutDirection = LayoutDirection.Ltr
+    private var effectDensity = 0f
+
+    fun record() {
+        val d = density ?: return
+        if (size.width <= 0f || size.height <= 0f) return
+        val m = with(d) { Frost.margin.toPx() }
+        if (effectDensity != d.density) {
+            effectDensity = d.density
+            layer.renderEffect = Frost.effect(with(d) { Frost.radius.toPx() } / Frost.SCALE)
+        }
+        val px = IntSize(ceil((size.width + 2 * m) / Frost.SCALE).toInt(), ceil((size.height + 2 * m) / Frost.SCALE).toInt())
+        layer.record(d, layoutDirection, px) {
+            scale(1f / Frost.SCALE, 1f / Frost.SCALE, pivot = Offset.Zero) {
+                // From here on, screen pixels shifted so the pane's top left minus the margin is the origin.
+                translate(m - at.x, m - at.y) {
+                    translate(host.screenOrigin.x, host.screenOrigin.y) { host.drawPanel(this, opaque = true) }
+                    if (sameWindow) for (s in host.sources) translate(s.at.x, s.at.y) { drawLayer(s.layer) }
+                }
+            }
+        }
+    }
+
+    fun draw(scope: DrawScope) = with(scope) {
+        val m = Frost.margin.toPx()
+        translate(-m, -m) { scale(Frost.SCALE, Frost.SCALE, pivot = Offset.Zero) { drawLayer(layer) } }
+    }
+}
+
+/** Redesign's glass, after CandyWrapper's BackdropBlurView: a 12 point blur radius and 1.14 saturation. */
+internal object Frost {
+    /** The radius the Mac hands its backdrop's gaussian blur (`glassBlur`), as Android's blur radius. */
+    val radius = 12.dp
+    /** How far past the pane's edge the copy reaches, so the blur does not fade in from its border. */
+    val margin = 24.dp
+    /** The copy is a quarter of the pane's pixels on each side; the blur hides the difference. */
+    const val SCALE = 4f
+    private const val SATURATION = 1.14f
+
+    @RequiresApi(31)
+    fun effect(radiusPx: Float): RenderEffect {
+        val radius = radiusPx.coerceAtLeast(1f)
+        val saturate = android.graphics.ColorMatrixColorFilter(android.graphics.ColorMatrix().apply { setSaturation(SATURATION) })
+        val blur = android.graphics.RenderEffect.createBlurEffect(radius, radius, android.graphics.Shader.TileMode.CLAMP)
+        return android.graphics.RenderEffect.createColorFilterEffect(saturate, blur).asComposeRenderEffect()
+    }
 }
 
 val LocalArtHost = staticCompositionLocalOf<ArtHost?> { null }
@@ -185,30 +321,29 @@ fun RedesignPanel(content: @Composable BoxScope.() -> Unit) {
         ArtEmphasis.PAGE -> DitherArt.PAGE_SCRIM
     }
     host.scrim = animateFloatAsState(target, tween(Motion.SHEET, easing = Motion.Ease), label = "scrim")
-    val band = c.sidebar
-    val blend = with(density) { (WindowInsets.statusBars.getTop(this) + 52.dp.roundToPx()).toFloat() }
+    host.reveal = reveal.asState()
+    host.background = c.background
+    host.band = c.sidebar
+    host.blend = with(density) { (WindowInsets.statusBars.getTop(this) + 52.dp.roundToPx()).toFloat() }
+    host.view = LocalView.current
     Box(
         Modifier.fillMaxSize().background(c.background)
             .onSizeChanged { s ->
                 panelSize = s
+                host.panelSize = Size(s.width.toFloat(), s.height.toFloat())
                 if (s.width == tallest.first) { if (s.height > tallest.second) tallest = s.width to s.height } else tallest = s.width to s.height
             }
-            .onGloballyPositioned { host.origin = it.positionInRoot() },
+            .onGloballyPositioned {
+                host.origin = it.positionInRoot()
+                val screen = it.positionOnScreen()
+                if (screen != host.screenOrigin) { host.screenOrigin = screen; host.changed() }
+            },
     ) {
         Box(
             Modifier.fillMaxSize().graphicsLayer().drawBehind {
-                val art = host.art
-                if (art != null) {
-                    drawImage(
-                        art.image, dstSize = IntSize(art.image.width * host.dotPx, art.image.height * host.dotPx),
-                        alpha = reveal.value, filterQuality = FilterQuality.None,
-                    )
-                }
-                val scrim = host.scrim.value
-                if (scrim > 0f) drawRect(c.background, alpha = scrim)
-                // The band's colour over the panel's top, all of it at the edge and falling off at once ((1 - t)^2).
-                val stops = Array(11) { i -> val t = i / 10f; t to band.copy(alpha = (1 - t) * (1 - t)) }
-                drawRect(Brush.verticalGradient(*stops, startY = 0f, endY = blend), size = androidx.compose.ui.geometry.Size(size.width, blend))
+                host.drawPanel(this, opaque = false)
+                // A reveal, a scrim change or new art repaints the panes over it too.
+                host.changed()
             },
         )
         CompositionLocalProvider(LocalArtHost provides host) { content() }
@@ -216,15 +351,17 @@ fun RedesignPanel(content: @Composable BoxScope.() -> Unit) {
 }
 
 /**
- * Redesign's frosted pane: the pre-blurred art lined up under the pane, the page's scrim over it,
- * then [tint]. A fixed texture draw, never a live blur. Without art (another theme, a test without a
- * panel, the art still rendering) it fills with [tint] over the background.
+ * Redesign's frosted pane over the panel. From Android 12 it is glass: what is behind it, the art and
+ * any [backdropSource] content such as the thread, blurred and saturated, then [tint]. Older versions
+ * draw the pre-blurred art lined up under the pane with the page's scrim, then [tint]. Without a
+ * panel (another theme, the sidebar, a test without a panel) it fills with [tint] over the background.
  */
 @Composable
 fun Modifier.frost(shape: Shape, tint: Color = Candy.colors.paneTint()): Modifier {
     val host = LocalArtHost.current
     val bg = Candy.colors.background
     if (host == null) return background(tint.over(bg), shape)
+    if (Build.VERSION.SDK_INT >= 31) return glass(host, shape, tint)
     val at = remember { mutableStateOf(Offset.Zero) }
     return onGloballyPositioned { at.value = it.positionInRoot() }.drawWithCache {
         val path = Path().apply { addOutline(shape.createOutline(size, layoutDirection, this@drawWithCache)) }
@@ -240,6 +377,33 @@ fun Modifier.frost(shape: Shape, tint: Color = Candy.colors.paneTint()): Modifie
                     )
                     drawRect(bg, alpha = host.scrim.value)
                 }
+                drawRect(tint)
+            }
+        }
+    }
+}
+
+@RequiresApi(31)
+@Composable
+private fun Modifier.glass(host: ArtHost, shape: Shape, tint: Color): Modifier {
+    val layer = rememberGraphicsLayer()
+    val view = LocalView.current
+    val pane = remember(host, layer, view) { FrostPane(host, layer, sameWindow = view === host.view) }
+    DisposableEffect(host, pane) {
+        host.panes += pane
+        onDispose { host.panes -= pane }
+    }
+    return onGloballyPositioned { val p = it.positionOnScreen(); if (p != pane.at) { pane.at = p; pane.record() } }.drawWithCache {
+        val path = Path().apply { addOutline(shape.createOutline(size, layoutDirection, this@drawWithCache)) }
+        if (size != pane.size || pane.density?.density != density) {
+            pane.size = size
+            pane.density = Density(density, fontScale)
+            pane.layoutDirection = layoutDirection
+            pane.record()
+        }
+        onDrawBehind {
+            clipPath(path) {
+                pane.draw(this)
                 drawRect(tint)
             }
         }

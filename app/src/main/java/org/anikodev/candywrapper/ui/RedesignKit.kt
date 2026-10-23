@@ -136,20 +136,25 @@ fun WaitingPill(label: String, menu: @Composable (open: Boolean, close: () -> Un
 }
 
 /**
- * Capy's machine row under the composer (DitherDeviceRowView): the computer's name with its
- * connection dot, muted. The Mac's Worktree/Local half needs the checkout, which the phone does not
- * read, so the machine stands alone.
+ * Capy's machine row under the composer (DitherDeviceRowView): a frosted pill with the laptop glyph,
+ * the computer's name, muted, and its connection dot. The Mac's Worktree/Local half and its menu need
+ * the checkout, which the phone does not read, so the machine stands alone.
  */
 @Composable
 fun RowScope.DeviceRow(machine: String, live: Boolean) {
     val c = Candy.colors
-    Row(
-        Modifier.weight(1f).heightIn(min = Pill.height).semantics { contentDescription = "$machine, ${if (live) "connected" else "not connected"}" },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        StatusDot(if (live) c.success else c.mutedForeground, size = 7.dp)
-        Txt(machine, CandyType.sm, c.secondaryLabel, maxLines = 1)
+    val shape = RoundedCornerShape(Radius.md)
+    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+        Row(
+            Modifier.height(Pill.height).floating(shape).padding(horizontal = 10.dp)
+                .semantics { contentDescription = "$machine, ${if (live) "connected" else "not connected"}" },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(Icons.Laptop, c.mutedForeground, 14.dp)
+            Txt(machine, CandyType.sm, c.secondaryLabel, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+            StatusDot(if (live) c.success else c.mutedForeground, size = 7.dp)
+        }
     }
 }
 

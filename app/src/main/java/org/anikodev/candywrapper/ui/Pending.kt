@@ -72,7 +72,7 @@ fun ComposerTray(modifier: Modifier = Modifier, border: Color = Candy.colors.bor
         val tinted = border != c.border
         Column(
             modifier.fillMaxWidth().padding(start = 12.dp + Pill.inset, end = 12.dp + Pill.inset, bottom = Pill.gap)
-                .floating(card, c.popover.copy(alpha = 0.9f)).clip(card).background(if (fill != c.card) fill else Color.Transparent)
+                .floating(card).clip(card).background(if (fill != c.card) fill else Color.Transparent)
                 .let { if (tinted) it.border(1.dp, border, card) else it }
                 .padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 8.dp),
             content = content,
