@@ -50,6 +50,15 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
@@ -401,22 +410,31 @@ fun ThreadView(
                 HeaderPill(diff, onDiff, actionsButton)
             } else actionsButton()
         }
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val side = maxOf(16.dp, (maxWidth - ChatLaneWidth) / 2)
-            if (state.items.isEmpty()) {
-                Column(Modifier.fillMaxSize().padding(horizontal = side, vertical = 16.dp)) { empty() }
-            } else {
-                Timeline(state, host, workingSince, working, side, onLoadOlder)
+        // The thread runs on under the composer and its pills; the list pads its end by their height
+        // so the newest row can still scroll clear of them.
+        var bottomPx by remember { mutableIntStateOf(0) }
+        val bottomInset = with(LocalDensity.current) { bottomPx.toDp() }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val side = maxOf(16.dp, (maxWidth - ChatLaneWidth) / 2)
+                if (state.items.isEmpty()) {
+                    Column(Modifier.fillMaxSize().padding(start = side, end = side, top = 16.dp, bottom = 16.dp + bottomInset)) { empty() }
+                } else {
+                    Timeline(state, host, workingSince, working, side, bottomInset, onLoadOlder)
+                }
             }
-        }
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
-            Column(Modifier.widthIn(max = ChatLaneWidth + 24.dp).fillMaxWidth(), content = bottom)
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { bottomPx = it.height }, contentAlignment = Alignment.BottomCenter) {
+                Column(Modifier.widthIn(max = ChatLaneWidth + 24.dp).fillMaxWidth(), content = bottom)
+            }
         }
     }
 }
 
+/** How far above the screen's bottom edge the thread starts fading out. */
+private val TimelineEndFade = 48.dp
+
 @Composable
-private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSince: Long, working: Boolean, side: Dp, loadOlder: () -> Unit) {
+private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSince: Long, working: Boolean, side: Dp, bottomInset: Dp, loadOlder: () -> Unit) {
     val c = Candy.colors
     val listState = rememberLazyListState()
     // Newest at the bottom with no scroll work: the list is reversed and laid out from the end.
@@ -441,10 +459,21 @@ private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSinc
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
-            Modifier.fillMaxSize(),
+            Modifier.fillMaxSize()
+                // Rows fade out over the last stretch above the screen's edge instead of being cut.
+                // The offscreen layer only redraws when the list does.
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    val fade = TimelineEndFade.toPx()
+                    drawRect(
+                        Brush.verticalGradient(0f to Color.Black, 1f to Color.Transparent, startY = size.height - fade, endY = size.height),
+                        blendMode = BlendMode.DstIn,
+                    )
+                },
             state = listState,
             reverseLayout = true,
-            contentPadding = PaddingValues(start = side, end = side, top = 8.dp, bottom = 16.dp),
+            contentPadding = PaddingValues(start = side, end = side, top = 8.dp, bottom = 16.dp + bottomInset),
         ) {
             if (showWorking) item(key = "working", contentType = "working") { WorkingRow(workingSince, state.queued.size) }
             items(reversed, key = { it.key }, contentType = { contentType(it) }) { item ->
@@ -470,7 +499,7 @@ private fun Timeline(state: ThreadSession.State, host: TimelineHost, workingSinc
         if (scrolledUp) {
             // T3's scroll-to-bottom pill.
             Row(
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp).clip(RoundedCornerShape(50)).background(c.popover)
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp + bottomInset).clip(RoundedCornerShape(50)).background(c.popover)
                     .border(1.dp, c.border, RoundedCornerShape(50))
                     .clickable(role = Role.Button, onClickLabel = "Jump to the newest message") { scope.launch { listState.scrollToItem(0) } }
                     .padding(horizontal = 12.dp, vertical = 7.dp),
