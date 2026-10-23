@@ -70,7 +70,12 @@ class MainActivity : ComponentActivity() {
         if (graph.readyFlow.value) graph.environments.setForeground(false)
     }
 
-    private fun Intent.sharedText(): String? = if (action == Intent.ACTION_SEND) getStringExtra(Intent.EXTRA_TEXT) else null
+    /** A pairing link shared to the app as text, or opened from a tapped link. */
+    private fun Intent.sharedText(): String? = when (action) {
+        Intent.ACTION_SEND -> getStringExtra(Intent.EXTRA_TEXT)
+        Intent.ACTION_VIEW -> dataString
+        else -> null
+    }
 
     private fun reportFirstFrame(view: View) {
         view.viewTreeObserver.addOnDrawListener(object : ViewTreeObserver.OnDrawListener {
