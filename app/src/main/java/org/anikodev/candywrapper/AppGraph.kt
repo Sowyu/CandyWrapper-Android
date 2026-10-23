@@ -32,7 +32,12 @@ import org.anikodev.candywrapper.data.CacheDb
 import org.anikodev.candywrapper.data.KeystoreDPoPKey
 import org.anikodev.candywrapper.data.LazyDPoPKey
 import org.anikodev.candywrapper.data.SecretBox
+import org.anikodev.candywrapper.ui.DitherArtStore
+import org.anikodev.candywrapper.ui.RedesignStyle
 import org.anikodev.candywrapper.ui.ThemeChoice
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import org.anikodev.candywrapper.update.Updater
 
 /**
@@ -80,6 +85,17 @@ class AppGraph(private val app: Application) {
     /** Light, dark or follow the system; stored with the UI state. */
     val theme: StateFlow<ThemeChoice> = _theme
 
+    /** Settings > Appearance > Redesign (Experimental) and its options, all stored on this phone. Off by default. */
+    val redesign = UiSetting(REDESIGN, false)
+    val redesignAccent = UiValue(REDESIGN_ACCENT)
+    val redesignPicture = UiValue(REDESIGN_PICTURE)
+    val redesignDim = UiValue(REDESIGN_DIM)
+    /** Redesign's sidebar sections the user folded, project group keys joined by newlines. */
+    val redesignFolded = UiValue(REDESIGN_FOLDED)
+
+    /** Redesign's dithered art, rendered once per picture, size and appearance and cached on disk. */
+    val ditherArt by lazy { DitherArtStore(app.filesDir, app.cacheDir) }
+
     /** Settings > Legacy sidebar: T3's per-project tree instead of the new flat sidebar. Off by default, as `legacySidebarEnabled`. */
     val legacySidebar = UiSetting(LEGACY_SIDEBAR, false)
 
@@ -126,8 +142,8 @@ class AppGraph(private val app: Application) {
         lastEnvironmentId = db.uiValue(LAST_ENV)
         lastThreadId = db.uiValue(LAST_THREAD)
         _theme.value = db.uiValue(THEME)?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: ThemeChoice.SYSTEM
-        for (s in listOf(legacySidebar, planMode, settledShelf, snoozedShelf, workingSection, workingShelf)) s.load()
-        for (v in listOf(machineScope, projectScope)) v.load()
+        for (s in listOf(legacySidebar, planMode, settledShelf, snoozedShelf, workingSection, workingShelf, redesign)) s.load()
+        for (v in listOf(machineScope, projectScope, redesignAccent, redesignPicture, redesignDim, redesignFolded)) v.load()
         stash.entries
         environments.restore(envs, shells)
         Timeline.span("cache.loaded", start, "${envs.size} environments, ${shells.values.sumOf { it?.threads?.size ?: 0 }} threads")
@@ -193,6 +209,16 @@ class AppGraph(private val app: Application) {
         }
     }
 
+    /** Redesign's options as one value, read before the first frame so the theme never flashes. */
+    val redesignStyle: StateFlow<RedesignStyle> by lazy {
+        combine(redesign.value, redesignAccent.value, redesignPicture.value, redesignDim.value) { on, accent, picture, dim -> styleOf(on, accent, picture, dim) }
+            .stateIn(scope, SharingStarted.Eagerly, styleOf(redesign.value.value, redesignAccent.value.value, redesignPicture.value.value, redesignDim.value.value))
+    }
+
+    private fun styleOf(on: Boolean, accent: String?, picture: String?, dim: String?) = RedesignStyle().let { d ->
+        RedesignStyle(on, accent ?: d.accent, picture ?: d.picture, dim?.toIntOrNull() ?: d.dim)
+    }
+
     /** After a sign-in or sign-out. */
     fun accountChanged() {
         _account.value = clerk.account()
@@ -237,5 +263,10 @@ class AppGraph(private val app: Application) {
         private const val LAST_ENV = "last_env"
         private const val THEME = "theme"
         private const val LAST_THREAD = "last_thread"
+        private const val REDESIGN = "redesign"
+        private const val REDESIGN_ACCENT = "redesign_accent"
+        private const val REDESIGN_PICTURE = "redesign_picture"
+        private const val REDESIGN_DIM = "redesign_dim"
+        private const val REDESIGN_FOLDED = "redesign_folded"
     }
 }

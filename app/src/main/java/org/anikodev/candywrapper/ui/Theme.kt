@@ -16,6 +16,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -105,6 +106,8 @@ data class CandyColors(
     val synNumber: Color,
     val synType: Color,
     val synFunction: Color,
+    /** Settings > Appearance > Redesign: Capy's palette, the art behind the main panel and Hugeicons. */
+    val redesign: Boolean = false,
 )
 
 private val Light = CandyColors(
@@ -275,16 +278,20 @@ object CandyType {
 
 }
 
-/** Corner radii: `--radius-sm` 6, `--control-radius`/`--radius-md` 8, `--radius` 10, `--radius-xl` 14, `--radius-2xl` 18. */
+/**
+ * Corner radii: `--radius-sm` 6, `--control-radius`/`--radius-md` 8, `--radius` 10, `--radius-xl` 14,
+ * `--radius-2xl` 18. Under Redesign they follow CandyWrapper's `DitherChrome.radius`: controls 8,
+ * cards, popovers and bubbles 12, the composer and panels 16.
+ */
 object Radius {
     val xs = 2.dp
-    val sm = 6.dp
+    val sm: Dp @Composable get() = if (Candy.redesign) 8.dp else 6.dp
     val md = 8.dp
-    val lg = 10.dp
-    val xl = 14.dp
-    val xxl = 18.dp
-    /** The composer card, `rounded-[20px]`. */
-    val composer = 20.dp
+    val lg: Dp @Composable get() = if (Candy.redesign) 12.dp else 10.dp
+    val xl: Dp @Composable get() = if (Candy.redesign) 12.dp else 14.dp
+    val xxl: Dp @Composable get() = if (Candy.redesign) 12.dp else 18.dp
+    /** The composer card, `rounded-[20px]`; Redesign's panel corner. */
+    val composer: Dp @Composable get() = if (Candy.redesign) 16.dp else 20.dp
 }
 
 /** T3's motion: Tailwind's 150 ms default and `cubic-bezier(.4,0,.2,1)`; sheets and the drawer take 200 ms. */
@@ -302,25 +309,35 @@ private val LocalCandyColors = staticCompositionLocalOf { Light }
 object Candy {
     val colors: CandyColors
         @Composable get() = LocalCandyColors.current
+    /** True under Settings > Appearance > Redesign. */
+    val redesign: Boolean
+        @Composable get() = LocalCandyColors.current.redesign
+    /** Redesign's options; read by the art and the Appearance settings. */
+    val style: RedesignStyle
+        @Composable get() = LocalRedesign.current
 }
+
+private val LocalRedesign = staticCompositionLocalOf { RedesignStyle() }
 
 enum class ThemeChoice { SYSTEM, LIGHT, DARK }
 
 /** The palette a theme choice resolves to; screenshot tests pass it directly. */
-fun candyColors(dark: Boolean) = if (dark) Dark else Light
+fun candyColors(dark: Boolean, style: RedesignStyle = RedesignStyle()) =
+    if (style.on) capyColors(dark, RedesignAccent.named(style.accent)) else if (dark) Dark else Light
 
 @Composable
-fun CandyTheme(choice: ThemeChoice = ThemeChoice.SYSTEM, content: @Composable () -> Unit) {
+fun CandyTheme(choice: ThemeChoice = ThemeChoice.SYSTEM, style: RedesignStyle = RedesignStyle(), content: @Composable () -> Unit) {
     val dark = when (choice) {
         ThemeChoice.SYSTEM -> isSystemInDarkTheme()
         ThemeChoice.LIGHT -> false
         ThemeChoice.DARK -> true
     }
-    val c = candyColors(dark)
+    val c = remember(dark, style.on, style.accent) { candyColors(dark, style) }
     val indication = remember(c.pressed) { PressIndication(c.pressed) }
     val selection = remember(c.primary) { TextSelectionColors(c.primary, c.primary.copy(alpha = 0.3f)) }
     CompositionLocalProvider(
         LocalCandyColors provides c,
+        LocalRedesign provides style,
         LocalIndication provides indication,
         LocalTextSelectionColors provides selection,
         content = content,

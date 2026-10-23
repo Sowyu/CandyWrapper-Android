@@ -366,7 +366,8 @@ fun ThreadView(
     val c = Candy.colors
     val shell = LocalShell.current
     var actions by remember { mutableStateOf(menuOpen) }
-    Column(Modifier.fillMaxSize().background(c.background).windowInsetsPadding(BottomInsets)) {
+    ArtEmphasisEffect(ArtEmphasis.THREAD)
+    Column(Modifier.fillMaxSize().page().windowInsetsPadding(BottomInsets)) {
         TopBar(
             title, subtitle = subtitle,
             subtitleColor = if (subtitleError) c.errorForeground else c.mutedForeground,
@@ -502,7 +503,8 @@ fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: S
         for (uri in uris) if (files.size < MAX_PICKS) describePick(context, uri)?.let { if (files.none { f -> f.uri == uri }) files += it }
     }
 
-    Column(Modifier.fillMaxSize().background(c.background).windowInsetsPadding(BottomInsets)) {
+    ArtEmphasisEffect(ArtEmphasis.HERO)
+    Column(Modifier.fillMaxSize().page().windowInsetsPadding(BottomInsets)) {
         TopBar("New thread", onBack = { nav.pop() }, subtitle = if (live) null else connection.label(), titleLead = project?.let { p -> { ProjectIcon(p, p.title) } })
         Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically) {

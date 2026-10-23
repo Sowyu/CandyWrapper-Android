@@ -164,8 +164,11 @@ fun Txt(
 /** A lucide icon in [tint]; `Color.Unspecified` keeps a brand glyph's own colours. */
 @Composable
 fun Icon(icon: ImageVector, tint: Color = Candy.colors.iconMuted, size: Dp = 16.dp, modifier: Modifier = Modifier, description: String? = null) {
+    // Redesign draws the Hugeicons glyph where one is mapped, at its own size centred in the box.
+    val huge = if (Candy.redesign) remember(icon.name, size) { HugeIcons.of(icon.name, HugeIcons.glyph(size.value)) } else null
     Image(
-        rememberVectorPainter(icon), description, modifier.size(size),
+        rememberVectorPainter(huge ?: icon), description, modifier.size(size),
+        contentScale = if (huge != null) ContentScale.None else ContentScale.Fit,
         colorFilter = if (tint == Color.Unspecified) null else ColorFilter.tint(tint),
     )
 }
@@ -369,7 +372,7 @@ fun TopBar(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val c = Candy.colors
-    Column(Modifier.fillMaxWidth().background(c.background).windowInsetsPadding(WindowInsets.statusBars)) {
+    Column(Modifier.fillMaxWidth().page().windowInsetsPadding(WindowInsets.statusBars)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             when {
                 onBack != null -> IconButton(Icons.ChevronLeft, "Back", tint = c.foreground, size = 20.dp, onClick = onBack)
@@ -393,7 +396,8 @@ fun TopBar(
             }
             actions()
         }
-        Divider()
+        // Redesign has no header bars: the art runs up under the header (the user on the Mac, 2026-10-21).
+        if (!c.redesign) Divider()
     }
 }
 
@@ -466,12 +470,17 @@ fun Alert(text: String, tone: NoticeTone, modifier: Modifier = Modifier, title: 
 
 private data class AlertLook(val border: Color, val fill: Color, val fg: Color, val icon: ImageVector, val iconTint: Color)
 
-/** A group of rows on T3's card (`rounded-xl border bg-card`). */
+/**
+ * A group of rows on T3's card (`rounded-xl border bg-card`). Over Redesign's art it is Capy's
+ * settings card, #222223 at 86% with a faint rim.
+ */
 @Composable
 fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val c = Candy.colors
+    val onArt = LocalArtHost.current != null
+    val shape = RoundedCornerShape(Radius.xl)
     Column(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.xl)).background(c.card).border(1.dp, c.border, RoundedCornerShape(Radius.xl)),
+        modifier.fillMaxWidth().clip(shape).background(if (onArt) c.settingsCard() else c.card).border(1.dp, if (onArt) c.rim() else c.border, shape),
         content = content,
     )
 }
@@ -629,7 +638,7 @@ fun Menu(
             Column(
                 Modifier.padding(4.dp).widthIn(min = minWidth, max = maxWidth)
                     .shadow(14.dp, shape, ambientColor = Color.Black.copy(alpha = if (c.dark) 0.4f else 0.12f), spotColor = Color.Black.copy(alpha = if (c.dark) 0.6f else 0.3f))
-                    .clip(shape).background(c.popover).border(1.dp, c.border, shape)
+                    .clip(shape).background(c.popover).border(1.dp, if (c.redesign) c.rim() else c.border, shape)
                     .heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(4.dp),
                 content = content,
             )
@@ -661,7 +670,8 @@ private class MenuPosition(private val side: MenuSide, private val alignEnd: Boo
 /**
  * A menu item (menu.tsx): `min-h-8 rounded-sm px-2 text-base` on touch with an 18dp muted icon. The
  * pressed item and the checked one of a radio group take `bg-accent`, as in T3's pickers. [detail]
- * adds the muted second line the access picker uses.
+ * adds the muted second line the access picker uses. Redesign marks the checked one with Capy's
+ * check at the right instead of a fill.
  */
 @Composable
 fun MenuItem(
@@ -681,7 +691,8 @@ fun MenuItem(
     val pressed by source.collectIsPressedAsState()
     val fg = if (destructive) c.errorForeground else c.foreground
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(RoundedCornerShape(Radius.sm)).background(if (pressed || selected) c.accent else Color.Transparent)
+        Modifier.fillMaxWidth().heightIn(min = 40.dp).clip(RoundedCornerShape(Radius.sm))
+            .background(if (pressed || (selected && !c.redesign)) c.accent else Color.Transparent)
             .clickable(source, null, enabled = enabled, role = Role.Button, onClick = onClick)
             .graphicsLayer { alpha = if (enabled) 1f else 0.64f }
             .padding(horizontal = 8.dp, vertical = 6.dp),
@@ -695,6 +706,7 @@ fun MenuItem(
             if (detail != null) Txt(detail, CandyType.sm, c.mutedForeground)
         }
         if (trailing != null) trailing()
+        if (selected && c.redesign) Icon(Icons.Check, c.foreground, 16.dp, Modifier.padding(top = if (detail != null) 3.dp else 0.dp))
     }
 }
 
@@ -741,10 +753,17 @@ fun EmptyState(title: String, body: String? = null, modifier: Modifier = Modifie
     }
 }
 
-/** A sentence-case label over a group of settings (SettingsSection's `text-xs font-medium`). */
+/**
+ * A sentence-case label over a group of settings (SettingsSection's `text-xs font-medium`). Redesign
+ * titles a section as Capy does, 15 regular in the foreground.
+ */
 @Composable
 fun GroupLabel(text: String, modifier: Modifier = Modifier) {
-    Txt(text, CandyType.xsMedium, Candy.colors.mutedForeground, modifier = modifier.padding(start = 4.dp, top = 24.dp, bottom = 8.dp).semantics { heading() })
+    val c = Candy.colors
+    Txt(
+        text, if (c.redesign) CandyType.base.copy(fontSize = 15.sp, lineHeight = 20.sp) else CandyType.xsMedium, if (c.redesign) c.foreground else c.mutedForeground,
+        modifier = modifier.padding(start = 4.dp, top = 24.dp, bottom = 8.dp).semantics { heading() },
+    )
 }
 
 /** Tailwind's -600 and -400 shades for the 18 colours `projectIdentity.ts` picks from. */

@@ -21,6 +21,43 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import android.content.Context
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.unit.IntOffset
+import java.io.File
+import kotlin.math.roundToInt
 import org.anikodev.candywrapper.AppGraph
 import org.anikodev.candywrapper.BuildConfig
 import org.anikodev.candywrapper.core.model.EnvironmentKind
@@ -36,11 +73,17 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
     val legacySidebar by graph.legacySidebar.value.collectAsStateWithLifecycle()
     val planMode by graph.planMode.value.collectAsStateWithLifecycle()
     val workingSection by graph.workingSection.value.collectAsStateWithLifecycle()
+    val style by graph.redesignStyle.collectAsStateWithLifecycle()
     val c = Candy.colors
+    val context = LocalContext.current
+    val choosePhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) graph.scope.launch(Dispatchers.IO) { copyPhoto(context, uri)?.let { graph.redesignPicture.set(it) } }
+    }
     var selected by remember { mutableStateOf<EnvironmentSession?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    ArtEmphasisEffect(ArtEmphasis.SETTINGS)
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             TopBar("Settings", onBack = if (nav.stack.size > 1) ({ nav.pop() }) else null)
@@ -65,16 +108,14 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                 }
 
                 GroupLabel("Appearance")
-                Card {
-                    for ((i, choice) in ThemeChoice.entries.withIndex()) {
-                        if (i > 0) Divider()
-                        ListRow(
-                            when (choice) { ThemeChoice.SYSTEM -> "Match the system"; ThemeChoice.LIGHT -> "Light"; ThemeChoice.DARK -> "Dark" },
-                            icon = when (choice) { ThemeChoice.SYSTEM -> Icons.Smartphone; ThemeChoice.LIGHT -> Icons.Sun; ThemeChoice.DARK -> Icons.Moon },
-                            selected = choice == theme,
-                        ) { graph.setTheme(choice) }
-                    }
-                }
+                AppearanceSettings(
+                    theme, style, graph::setTheme,
+                    onRedesign = graph.redesign::set,
+                    onAccent = graph.redesignAccent::set,
+                    onPicture = graph.redesignPicture::set,
+                    onChoosePhoto = { choosePhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onDim = { graph.redesignDim.set(it.toString()) },
+                )
 
                 GroupLabel("Sidebar")
                 SidebarSettings(workingSection, graph.workingSection::set)
@@ -162,3 +203,149 @@ private fun ConnectionRow(session: EnvironmentSession, onClick: () -> Unit) {
         onClick = onClick,
     )
 }
+
+/**
+ * Settings > Appearance: light, dark or the system's, then Redesign (Experimental) and, while it is on,
+ * its own options from the Mac's Appearance page: the accent, the picture it dithers and how much an
+ * open thread dims it. Each change applies live.
+ */
+@Composable
+fun AppearanceSettings(
+    theme: ThemeChoice,
+    style: RedesignStyle,
+    onTheme: (ThemeChoice) -> Unit,
+    onRedesign: (Boolean) -> Unit,
+    onAccent: (String) -> Unit,
+    onPicture: (String) -> Unit,
+    onChoosePhoto: () -> Unit,
+    onDim: (Int) -> Unit,
+) {
+    val c = Candy.colors
+    Card {
+        for ((i, choice) in ThemeChoice.entries.withIndex()) {
+            if (i > 0) Divider()
+            ListRow(
+                when (choice) { ThemeChoice.SYSTEM -> "Match the system"; ThemeChoice.LIGHT -> "Light"; ThemeChoice.DARK -> "Dark" },
+                icon = when (choice) { ThemeChoice.SYSTEM -> Icons.Smartphone; ThemeChoice.LIGHT -> Icons.Sun; ThemeChoice.DARK -> Icons.Moon },
+                selected = choice == theme,
+            ) { onTheme(choice) }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Card {
+        SwitchRow(
+            "Redesign (Experimental)", style.on,
+            detail = "Capy's colours, a dithered picture behind threads and new icons, as in CandyWrapper on the Mac.",
+            icon = Icons.FlaskConical, onChange = onRedesign,
+        )
+        if (style.on) {
+            Divider()
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp)) {
+                Txt("Accent color", CandyType.base, c.foreground)
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    for (a in RedesignAccent.ALL) Swatch(a.color(c.dark), a.label, a.id == style.accent) { onAccent(a.id) }
+                }
+            }
+            Divider()
+            Box {
+                var open by remember { mutableStateOf(false) }
+                ListRow(
+                    "Picture", icon = Icons.Image, detail = "Dithered behind threads and Settings",
+                    trailing = { SelectValue(DitherPictures.label(style.picture), open) },
+                ) { open = true }
+                Menu(open, { open = false }, alignEnd = true, minWidth = 200.dp) {
+                    for ((id, label) in DitherPictures.builtIns) MenuItem(label, selected = id == style.picture) { open = false; onPicture(id) }
+                    if (DitherPictures.isPhoto(style.picture)) MenuItem("Photo", selected = true) { open = false }
+                    MenuSeparator()
+                    MenuItem("Choose a photo", Icons.Upload) { open = false; onChoosePhoto() }
+                }
+            }
+            Divider()
+            DimSlider(style.dim, onDim)
+        }
+    }
+}
+
+/** One accent choice: a 24dp disc in a 40dp target, ringed while chosen. */
+@Composable
+private fun Swatch(color: Color, label: String, chosen: Boolean, onClick: () -> Unit) {
+    val c = Candy.colors
+    Box(
+        Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.RadioButton, onClickLabel = label, onClick = onClick)
+            .semantics { contentDescription = label; selected = chosen },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(30.dp).let { if (chosen) it.border(2.dp, color, CircleShape) else it }, contentAlignment = Alignment.Center) {
+            Box(Modifier.size(22.dp).clip(CircleShape).background(color))
+        }
+    }
+}
+
+/**
+ * Capy's settings select, as wide as its value: 11dp in, the value, 8dp to the chevron, 8dp out, 28dp
+ * tall, on a fill a step lighter than the card with a faint rim.
+ */
+@Composable
+fun SelectValue(value: String, open: Boolean = false) {
+    val c = Candy.colors
+    val shape = RoundedCornerShape(Radius.md)
+    Row(
+        Modifier.height(28.dp).clip(shape).background(c.foreground.copy(alpha = if (c.dark) 0.035f else 0.03f))
+            .border(1.dp, c.foreground.copy(alpha = if (open) 0.2f else 0.1f), shape).padding(start = 11.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Txt(value, CandyType.sm, c.foreground, maxLines = 1)
+        Icon(Icons.ChevronDown, c.mutedForeground, 12.dp)
+    }
+}
+
+/**
+ * The Mac's "Background dim": how much of the background covers the art behind an open thread, 0 to
+ * 90% in steps of 5. The thumb follows the finger; the setting is written when it lets go.
+ */
+@Composable
+private fun DimSlider(dim: Int, onDim: (Int) -> Unit) {
+    val c = Candy.colors
+    var value by remember(dim) { mutableIntStateOf(dim.coerceIn(0, 90)) }
+    var width by remember { mutableIntStateOf(1) }
+    val thumb = with(LocalDensity.current) { 20.dp.toPx() }
+    fun at(x: Float) = (((x - thumb / 2) / (width - thumb).coerceAtLeast(1f)).coerceIn(0f, 1f) * 18).roundToInt() * 5
+    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Txt("Background dim", CandyType.base, c.foreground, modifier = Modifier.weight(1f))
+            Txt("$value%", CandyType.sm, c.mutedForeground)
+        }
+        Txt("How much an open thread dims the picture", CandyType.sm, c.mutedForeground)
+        Box(
+            Modifier.fillMaxWidth().height(44.dp).onSizeChanged { width = it.width }
+                .semantics {
+                    contentDescription = "Background dim"
+                    progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), 0f..90f, 17)
+                    setProgress { v -> onDim((v / 5).roundToInt() * 5); true }
+                }
+                .pointerInput(Unit) { detectTapGestures { value = at(it.x); onDim(value) } }
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(onDragEnd = { onDim(value) }) { change, _ -> value = at(change.position.x) }
+                },
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            val fraction = value / 90f
+            Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(c.foreground.copy(alpha = 0.1f)))
+            Box(Modifier.fillMaxWidth(fraction.coerceAtLeast(0.001f)).height(4.dp).clip(CircleShape).background(c.primary))
+            Box(
+                Modifier.offset { IntOffset(((width - thumb) * fraction).roundToInt(), 0) }.size(20.dp).clip(CircleShape)
+                    .background(if (c.dark) Color(0xFFF5F5F5) else Color.White).border(1.dp, c.border, CircleShape),
+            )
+        }
+    }
+}
+
+/** Copies a picked photo into the app's files as Redesign's picture and returns its id; the one it replaces goes. */
+private fun copyPhoto(context: Context, uri: Uri): String? = runCatching {
+    val dir = DitherPictures.folder(context.filesDir).apply { mkdirs() }
+    val target = File(dir, "photo-${System.currentTimeMillis()}.img")
+    context.contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } } ?: return null
+    dir.listFiles()?.filter { it != target }?.forEach { it.delete() }
+    DitherPictures.photoId(target)
+}.getOrNull()

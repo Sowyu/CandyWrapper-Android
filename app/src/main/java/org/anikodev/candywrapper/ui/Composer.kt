@@ -404,14 +404,20 @@ private fun AccessItems(server: ServerInfo, settings: ComposerSettings, plain: B
     }
 }
 
-/** T3's switch (switch.tsx): 36x20, the thumb inset 2dp. Read-only; the row around it takes the tap. */
+/**
+ * T3's switch (switch.tsx): 36x20, the thumb inset 2dp. Read-only; the row around it takes the tap.
+ * Redesign measured Capy's: the accent track, off on Capy's `--muted` #353537 in dark, and a solid
+ * #131314 knob in dark (white in light) with no shadow.
+ */
 @Composable
 fun Switch(on: Boolean) {
     val c = Candy.colors
+    val off = if (c.redesign && c.dark) Color(0xFF353537) else c.input
+    val knob = if (c.redesign && c.dark) Color(0xFF131314) else Color.White
     Box(
-        Modifier.size(width = 36.dp, height = 20.dp).clip(CircleShape).background(if (on) c.primary else c.input).padding(2.dp),
+        Modifier.size(width = 36.dp, height = 20.dp).clip(CircleShape).background(if (on) c.primary else off).padding(2.dp),
         contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
-        Box(Modifier.size(16.dp).clip(CircleShape).background(Color.White))
+        Box(Modifier.size(16.dp).clip(CircleShape).background(knob))
     }
 }

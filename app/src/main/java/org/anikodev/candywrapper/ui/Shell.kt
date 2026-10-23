@@ -109,7 +109,7 @@ fun AppShell(drawer: DrawerState, sidebar: @Composable () -> Unit, content: @Com
                 Row(Modifier.fillMaxSize()) {
                     Box(Modifier.width(SidebarWidth).fillMaxHeight()) { sidebar() }
                     Box(Modifier.width(1.dp).fillMaxHeight().background(Candy.colors.sidebarBorder))
-                    Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+                    Box(Modifier.weight(1f).fillMaxHeight()) { RedesignPanel { content() } }
                 }
             }
         } else {
@@ -149,7 +149,7 @@ private fun PhoneShell(drawer: DrawerState, windowWidth: Dp, sidebar: @Composabl
             // A swipe from the left edge opens the sidebar. The detector watches the content's
             // touches before it does and claims one only once it is a rightward drag from the edge,
             // so taps near the edge still reach the content.
-            Box(Modifier.fillMaxSize().edgeSwipe(edgePx, widthPx, drawer, scope)) { content() }
+            Box(Modifier.fillMaxSize().edgeSwipe(edgePx, widthPx, drawer, scope)) { RedesignPanel { content() } }
             // On gesture navigation the system keeps the edge for Back, except the middle 200dp handed to the app here.
             if (!showing) {
                 Box(

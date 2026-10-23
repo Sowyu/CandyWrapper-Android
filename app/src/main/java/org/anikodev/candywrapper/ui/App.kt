@@ -413,7 +413,8 @@ private fun sidebarEnvironment(s: EnvironmentSession): SidebarEnvironment {
 private fun NoThread(hasEnvironments: Boolean) {
     val c = Candy.colors
     val shell = LocalShell.current
-    Column(Modifier.fillMaxSize().background(c.background)) {
+    ArtEmphasisEffect(ArtEmphasis.HERO)
+    Column(Modifier.fillMaxSize().page()) {
         TopBar(
             "No active thread",
             leading = if (!shell.wide) ({ IconButton(Icons.PanelLeft, "Open the sidebar", tint = c.foreground, onClick = shell.openSidebar) }) else null,
