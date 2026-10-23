@@ -38,13 +38,13 @@ data class ThreadSummary(
     companion object {
         /**
          * Decodes a shell thread. Null for rows the lists never show: subagent threads, archived or
-         * deleted ones, and anything without an id.
+         * deleted ones, and anything without an id. The archived list passes [archived] to keep its rows.
          */
-        fun fromShell(o: JsonObject, nowMs: Long = System.currentTimeMillis()): ThreadSummary? {
+        fun fromShell(o: JsonObject, nowMs: Long = System.currentTimeMillis(), archived: Boolean = false): ThreadSummary? {
             val id = o.str("id") ?: return null
             val projectId = o.str("projectId") ?: return null
             if (o.obj("lineage")?.str("relationshipToParent") == "subagent") return null
-            if (o.str("archivedAt") != null || o.str("deletedAt") != null) return null
+            if ((o.str("archivedAt") != null && !archived) || o.str("deletedAt") != null) return null
             val pill = pill(o)
             val createdAt = time(o.str("createdAt"))
             val updatedAt = time(o.str("updatedAt"))

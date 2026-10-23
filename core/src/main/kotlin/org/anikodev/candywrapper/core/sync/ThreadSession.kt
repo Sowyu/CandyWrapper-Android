@@ -122,6 +122,15 @@ class ThreadSession internal constructor(
         }
     }
 
+    /**
+     * Reads the cache on the calling thread, so the thread a cold start reopens has its rows before
+     * the first frame. [acquire] then finds it loaded.
+     */
+    fun preload() {
+        val needsLoad = synchronized(lock) { !loadStarted.also { loadStarted = true } }
+        if (needsLoad) load()
+    }
+
     fun release() {
         val last = synchronized(lock) {
             refs = (refs - 1).coerceAtLeast(0)

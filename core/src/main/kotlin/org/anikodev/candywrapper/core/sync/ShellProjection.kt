@@ -122,9 +122,22 @@ class ShellProjection(cached: CachedShell? = null) {
     /** Sequence moved without row changes: still worth saving the cursor. */
     fun cursorWrite() = ShellWrite(sequence, false, emptyList(), emptySet(), emptyList(), emptySet())
 
-    private fun project(o: JsonObject): ProjectSummary? {
-        val id = o.str("id") ?: return null
-        if (o.str("deletedAt") != null) return null
-        return ProjectSummary(id, o.str("title") ?: "Project", o.str("workspaceRoot").orEmpty())
+    companion object {
+        private fun project(o: JsonObject): ProjectSummary? {
+            val id = o.str("id") ?: return null
+            if (o.str("deletedAt") != null) return null
+            return ProjectSummary(id, o.str("title") ?: "Project", o.str("workspaceRoot").orEmpty())
+        }
+
+        /**
+         * The archived threads from `orchestration.getArchivedShellSnapshot` (contracts
+         * `OrchestrationV2ArchivedShellSnapshot`: projects and threads, as in the active shell),
+         * grouped like the active list. Archived projects' titles come from the same snapshot.
+         */
+        fun archivedModel(snapshot: JsonObject, nowMs: Long = System.currentTimeMillis()): ThreadListModel {
+            val projects = snapshot.arr("projects").orEmpty().mapNotNull { (it as? JsonObject)?.let(::project) }.associateBy { it.id }
+            val threads = snapshot.arr("threads").orEmpty().mapNotNull { (it as? JsonObject)?.let { t -> ThreadSummary.fromShell(t, nowMs, archived = true) } }
+            return ThreadListModel.build(projects, threads)
+        }
     }
 }

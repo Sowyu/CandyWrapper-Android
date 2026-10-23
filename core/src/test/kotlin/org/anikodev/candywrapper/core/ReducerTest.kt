@@ -161,4 +161,16 @@ class ReducerTest {
         assertEquals(3, restored.sequence)
         assertTrue(restored.hasCursor)
     }
+
+    @Test
+    fun archivedSnapshotKeepsArchivedThreadsGroupedByProject() {
+        val thread = """{"id":"t","projectId":"p","title":"Old work","status":"idle","createdAt":"2026-10-09T09:12:47.701Z","updatedAt":"2026-10-09T09:12:47.701Z","archivedAt":"2026-10-10T09:00:00.000Z","latestRunId":null,"activeProviderThreadId":null,"lineage":{"relationshipToParent":null}}"""
+        val deleted = thread.replace("\"id\":\"t\"", "\"id\":\"d\"").replace("\"archivedAt\"", "\"deletedAt\":\"2026-10-11T00:00:00.000Z\",\"archivedAt\"")
+        val model = ShellProjection.archivedModel(json("""{"schemaVersion":2,"snapshotSequence":3,"projects":[{"id":"p","title":"P","workspaceRoot":"/p"}],"threads":[$thread,$deleted]}"""))
+        assertEquals(1, model.threadCount)
+        assertEquals("P", model.groups.single().project!!.title)
+        assertEquals("Old work", model.groups.single().threads.single().title)
+        // The active shell still drops it.
+        assertNull(ThreadSummary.fromShell(json(thread)))
+    }
 }

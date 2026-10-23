@@ -39,11 +39,11 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.anikodev.candywrapper.core.json.str
+import org.anikodev.candywrapper.core.model.ThreadListModel
 import org.anikodev.candywrapper.core.model.DirectRoute
 import org.anikodev.candywrapper.core.model.EnvironmentKind
 import org.anikodev.candywrapper.core.model.SavedEnvironment
 import org.anikodev.candywrapper.core.model.ServerInfo
-import org.anikodev.candywrapper.core.model.ThreadListModel
 import org.anikodev.candywrapper.core.rpc.OkHttpRpcSocket
 import org.anikodev.candywrapper.core.rpc.RpcConnection
 import org.anikodev.candywrapper.core.rpc.RpcError
@@ -170,6 +170,16 @@ class EnvironmentSession(
     suspend fun request(tag: String, payload: JsonObject = RpcConnection.EMPTY, timeoutMs: Long = 15_000): JsonElement? {
         val conn = liveConnection() ?: throw NotConnected()
         return conn.request(tag, payload, timeoutMs)
+    }
+
+    /**
+     * The archived threads, grouped by project (`orchestration.getArchivedShellSnapshot`, input `{}`).
+     * Read when the sidebar's archived list opens; nothing is cached.
+     */
+    suspend fun archivedThreads(): ThreadListModel {
+        val start = Timeline.nowMs()
+        val result = request("orchestration.getArchivedShellSnapshot") as? JsonObject ?: return ThreadListModel()
+        return ShellProjection.archivedModel(result).also { Timeline.span("$trace.archived.loaded", start, "${it.threadCount} threads") }
     }
 
     /**
