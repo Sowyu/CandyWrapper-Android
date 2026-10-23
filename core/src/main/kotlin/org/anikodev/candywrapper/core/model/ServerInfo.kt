@@ -91,6 +91,12 @@ data class ServerInfo(
     val defaultModel: ModelSelection? = null,
     val defaultRuntimeMode: String = "full-access",
     val serverResolvesDelivery: Boolean = false,
+    /** `capabilities.threadSettlement`: Settle and Un-settle. */
+    val threadSettlement: Boolean = false,
+    /** `capabilities.threadSnooze`: Snooze and Wake. */
+    val threadSnooze: Boolean = false,
+    /** `capabilities.threadPinning`: Pin and Unpin. */
+    val threadPinning: Boolean = false,
 ) {
     fun provider(instanceId: String) = providers.firstOrNull { it.instanceId == instanceId }
 
@@ -106,11 +112,15 @@ data class ServerInfo(
         fun parse(config: JsonObject): ServerInfo {
             val providers = config.arr("providers").orEmpty().mapNotNull { (it as? JsonObject)?.let(::provider) }
             val settings = config.obj("settings")
+            val caps = config.obj("environment")?.obj("capabilities")
             return ServerInfo(
                 providers = providers,
                 defaultModel = ModelSelection.from(settings?.obj("defaultModelSelection")),
                 defaultRuntimeMode = settings?.str("defaultRuntimeMode")?.takeIf { it in RUNTIME_MODES } ?: "full-access",
-                serverResolvesDelivery = config.obj("environment")?.obj("capabilities")?.bool("serverResolvedCommandContext") == true,
+                serverResolvesDelivery = caps?.bool("serverResolvedCommandContext") == true,
+                threadSettlement = caps?.bool("threadSettlement") == true,
+                threadSnooze = caps?.bool("threadSnooze") == true,
+                threadPinning = caps?.bool("threadPinning") == true,
             )
         }
 

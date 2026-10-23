@@ -58,6 +58,14 @@ class ReducerTest {
         // An enrichment snapshot does not replace the list.
         assertEquals(false, shell.apply(json("""{"kind":"snapshot","resolvedRepositoryIdentityRoots":["/p"],"snapshot":{"snapshotSequence":12,"projects":[],"threads":[]}}""")))
         assertEquals(0, shell.model().threadCount)
+        // One that names a project's root patches its repository identity, and nothing else.
+        assertTrue(shell.apply(json("""{"kind":"snapshot","resolvedRepositoryIdentityRoots":["/p"],"snapshot":{"snapshotSequence":12,"projects":[{"id":"p","title":"P","workspaceRoot":"/p",
+            "repositoryIdentity":{"canonicalKey":"github.com/x/p","locator":{"source":"git-remote","remoteName":"origin","remoteUrl":"u"},"name":"p","origin":{"canonicalKey":"github.com/up/p","displayName":"up/p"}}}],"threads":[]}}""")))
+        val project = shell.model().projects.single()
+        assertEquals("github.com/up/p", project.repoKey)
+        assertEquals("up/p", project.repoName)
+        assertEquals(listOf("p"), shell.takeWrite()!!.projects.map { it.id })
+        assertEquals(12, shell.sequence)
         assertEquals(12, shell.sequence)
     }
 

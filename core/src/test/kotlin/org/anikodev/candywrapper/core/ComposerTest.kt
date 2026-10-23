@@ -82,6 +82,13 @@ class ComposerTest {
         assertEquals(json("""{"type":"thread.visit","visitedAt":"2026-10-09T09:12:47.701Z"}"""), JsonObject(shape(Commands.visit("t", 1791537167701))))
         assertEquals(json("""{"type":"thread.metadata.update","title":"New name"}"""), JsonObject(shape(Commands.rename("t", "  New name "))))
         assertEquals(json("""{"type":"thread.archive"}"""), JsonObject(shape(Commands.archive("t"))))
+        // contracts orchestrationV2.ts thread.settle / unsettle / snooze / unsnooze / pin / unpin.
+        assertEquals(json("""{"type":"thread.settle"}"""), JsonObject(shape(Commands.settle("t"))))
+        assertEquals(json("""{"type":"thread.unsettle","reason":"user"}"""), JsonObject(shape(Commands.unsettle("t"))))
+        assertEquals(json("""{"type":"thread.snooze","snoozedUntil":"2026-10-09T09:12:47.701Z"}"""), JsonObject(shape(Commands.snooze("t", 1791537167701))))
+        assertEquals(json("""{"type":"thread.unsnooze","reason":"user"}"""), JsonObject(shape(Commands.unsnooze("t"))))
+        assertEquals(json("""{"type":"thread.pin"}"""), JsonObject(shape(Commands.pin("t"))))
+        assertEquals(json("""{"type":"thread.unpin"}"""), JsonObject(shape(Commands.unpin("t"))))
         val create = Commands.createThread("t", "p", "New thread", ModelSelection("claudeAgent", "claude-haiku-5-5"), "approval-required", "default")
         assertEquals(json("""{"type":"thread.create","createdBy":"user","creationSource":"mobile","projectId":"p","title":"New thread",
             "modelSelection":{"instanceId":"claudeAgent","model":"claude-haiku-5-5"},"runtimeMode":"approval-required","interactionMode":"default",
@@ -99,6 +106,8 @@ class ComposerTest {
         val exit = frames.first { it.dir == "recv" && it.body.str("_tag") == "Exit" && it.body.str("requestId") == id }
         val info = ServerInfo.parse(exit.body.obj("exit")!!.obj("value")!!)
         assertTrue(info.serverResolvesDelivery)
+        assertTrue(info.threadSettlement && info.threadSnooze && info.threadPinning)
+        assertFalse(ServerInfo.parse(json("{}")).threadSnooze)
         val claude = assertNotNull(info.provider("claudeAgent"))
         val model = claude.models.first()
         val effort = model.options.first { it.id == "effort" }

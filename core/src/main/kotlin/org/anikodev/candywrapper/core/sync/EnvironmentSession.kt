@@ -103,7 +103,7 @@ class EnvironmentSession(
     val state: StateFlow<ConnectionState> = _state
 
     private val shellLock = Any()
-    private val shell = ShellProjection(cachedShell)
+    private val shell = ShellProjection(cachedShell, initial.id)
     private val _threads = MutableStateFlow(shell.model())
     val threads: StateFlow<ThreadListModel> = _threads
 
@@ -180,7 +180,7 @@ class EnvironmentSession(
         val start = Timeline.nowMs()
         val result = request("orchestration.getArchivedShellSnapshot") as? JsonObject ?: return ThreadListModel()
         // Hundreds of archived threads take a moment to read and sort; keep it off the caller's thread.
-        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { ShellProjection.archivedModel(result) }.also { Timeline.span("$trace.archived.loaded", start, "${it.threadCount} threads") }
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { ShellProjection.archivedModel(result, envId = id) }.also { Timeline.span("$trace.archived.loaded", start, "${it.threadCount} threads") }
     }
 
     /**

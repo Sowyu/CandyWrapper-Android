@@ -144,6 +144,22 @@ object Commands {
 
     fun markUnread(threadId: String) = command("thread.mark-unread", threadId)
 
+    /** Parks the thread on the Settled shelf (`thread.settle`; capability `threadSettlement`). */
+    fun settle(threadId: String) = command("thread.settle", threadId)
+
+    fun unsettle(threadId: String) = command("thread.unsettle", threadId) { put("reason", "user") }
+
+    /** Hides the thread until [untilMs] (`thread.snooze`; capability `threadSnooze`). */
+    fun snooze(threadId: String, untilMs: Long) = command("thread.snooze", threadId) { put("snoozedUntil", iso(untilMs)) }
+
+    /** Wakes a snoozed thread now. */
+    fun unsnooze(threadId: String) = command("thread.unsnooze", threadId) { put("reason", "user") }
+
+    /** Pins without an order key: the server keeps keyless pins newest first (capability `threadPinning`). */
+    fun pin(threadId: String) = command("thread.pin", threadId)
+
+    fun unpin(threadId: String) = command("thread.unpin", threadId)
+
     fun setRuntimeMode(threadId: String, mode: String) = command("thread.runtime-mode.set", threadId) { put("runtimeMode", mode) }
 
     fun setInteractionMode(threadId: String, mode: String) = command("thread.interaction-mode.set", threadId) { put("interactionMode", mode) }
