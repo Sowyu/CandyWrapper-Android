@@ -68,6 +68,10 @@ sealed interface Screen {
     data object Connect : Screen
     data object Settings : Screen
     data object Diagnostics : Screen
+    /** Redesign's Orchestrator pane, full screen on a phone. */
+    data object Orchestrator : Screen
+    /** Settings > Orchestrator. */
+    data object OrchestratorSettings : Screen
 }
 
 /** A plain back stack. Screens swap on the next frame; the sidebar is the only thing that slides. */
@@ -105,6 +109,7 @@ fun App(graph: AppGraph, sharedText: String?, consumeShared: () -> Unit) {
     LaunchedEffect(main) { if (main.threadId == null && !drawer.isOpen) drawer.open() }
     val sessions by graph.environments.sessions.collectAsStateWithLifecycle()
     var renaming by remember { mutableStateOf<ThreadSummary?>(null) }
+    var renamingOrchestrator by remember { mutableStateOf(false) }
     var picker by remember { mutableStateOf<NewThreadTarget?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -136,6 +141,8 @@ fun App(graph: AppGraph, sharedText: String?, consumeShared: () -> Unit) {
                     Screen.Connect -> ConnectScreen(graph, nav)
                     Screen.Settings -> SettingsScreen(graph, nav)
                     Screen.Diagnostics -> DiagnosticsScreen(graph, nav)
+                    Screen.Orchestrator -> OrchestratorScreen(graph, nav)
+                    Screen.OrchestratorSettings -> OrchestratorSettingsScreen(graph, nav)
                 }
             }
         }
@@ -146,7 +153,7 @@ fun App(graph: AppGraph, sharedText: String?, consumeShared: () -> Unit) {
             else -> AppShell(
                 drawer,
                 sidebar = {
-                    SidebarHost(graph, nav, main, drawer, onRename = { t -> renaming = t }, onNewThreadIn = { picker = it }) { s, block -> act(s, block) }
+                    SidebarHost(graph, nav, main, drawer, onRename = { t -> renaming = t }, onNewThreadIn = { picker = it }, onRenameOrchestrator = { renamingOrchestrator = true }) { s, block -> act(s, block) }
                 },
                 content = screen,
             )
@@ -159,6 +166,13 @@ fun App(graph: AppGraph, sharedText: String?, consumeShared: () -> Unit) {
             RenameSheet(thread.title, onDismiss = { renaming = null }) { title ->
                 renaming = null
                 graph.environments.session(thread.envId)?.let { s -> act(s) { s.dispatch(Commands.rename(thread.id, title)) } }
+            }
+        }
+        if (renamingOrchestrator) {
+            // A rename changes the brief's {{name}}, so it goes out as an updated brief with your next message.
+            RenameSheet(graph.orchestratorStore.config.value.displayName, title = "Rename the Orchestrator", onDismiss = { renamingOrchestrator = false }) { name ->
+                renamingOrchestrator = false
+                graph.orchestratorStore.update { it.copy(name = name) }
             }
         }
         picker?.let { target ->
@@ -199,6 +213,7 @@ private fun SidebarHost(
     drawer: DrawerState,
     onRename: (ThreadSummary) -> Unit,
     onNewThreadIn: (NewThreadTarget) -> Unit,
+    onRenameOrchestrator: () -> Unit,
     act: (EnvironmentSession, suspend () -> Unit) -> Unit,
 ) {
     val sessions by graph.environments.sessions.collectAsStateWithLifecycle()
@@ -249,10 +264,13 @@ private fun SidebarHost(
             .combine(graph.projectScope.value) { models, key -> models to key }
             .combine(graph.workingSection.value) { input, working -> Triple(input.first, input.second, working) }
             .combine(wake) { input, _ -> input }
+            .combine(graph.orchestratorStore.config.combine(graph.orchestrator.ui) { c, ui -> if (ui.active) c.machines.map { (env, m) -> "$env:${m.threadId}" }.toSet() else emptySet() }) { input, hidden -> input to hidden }
             .conflate()
-            .map { (models, key, working) ->
+            .map { (input, hidden) ->
+                val (models, key, working) = input
                 val now = System.currentTimeMillis()
-                val threads = models.flatMap { m -> m.groups.flatMap { it.threads } }
+                // The Orchestrator leaves the thread list: it sits pinned above it instead.
+                val threads = models.flatMap { m -> m.groups.flatMap { it.threads } }.filter { it.key !in hidden }
                 graph.inboxReturns.observe(if (working) threads else null, now)
                 SidebarModel.build(models.flatMap { it.projects }, threads, key, now, workingShelf = working, returnedAt = graph.inboxReturns::returnedAt)
             }
@@ -270,6 +288,10 @@ private fun SidebarHost(
     val workingOpen by graph.workingShelf.value.collectAsStateWithLifecycle()
     val foldedValue by graph.redesignFolded.value.collectAsStateWithLifecycle()
     val folded = remember(foldedValue) { foldedValue?.split('\n')?.filter { it.isNotEmpty() }?.toSet().orEmpty() }
+    val orchestrator by graph.orchestrator.ui.collectAsStateWithLifecycle()
+    val orchestratorConfig by graph.orchestratorStore.config.collectAsStateWithLifecycle()
+    val orchestratorNow by rememberUpdatedState(orchestrator)
+    val handsOffNow by rememberUpdatedState(orchestratorConfig.handsOff)
 
     fun closeOnPhone() { scope.launch { drawer.close() } }
 
@@ -386,6 +408,14 @@ private fun SidebarHost(
                 if (pending != null) scope.launch { for (u in pending.second) runCatching { u() } }
             },
             refresh = { scopedNow.forEach { it.networkChanged() } },
+            openOrchestrator = {
+                nav.reset(Screen.Main(mainNow.envId, mainNow.threadId))
+                nav.push(Screen.Orchestrator)
+                closeOnPhone()
+            },
+            renameOrchestrator = onRenameOrchestrator,
+            handsOff = { t -> if (orchestratorNow.active) t.key in handsOffNow else null },
+            toggleHandsOff = { t -> graph.orchestrator.toggleHandsOff(t.key) },
         )
     }
 
@@ -400,6 +430,8 @@ private fun SidebarHost(
             folded = folded,
             archived = archived,
             undo = undo?.first,
+            orchestrator = if (orchestrator.active) OrchestratorRowInfo(orchestrator.name, orchestrator.machine, orchestrator.bot, orchestrator.needs.size,
+                orchestrator.working, open = nav.top == Screen.Orchestrator) else null,
         )
     }
 }
@@ -437,11 +469,12 @@ private fun NoThread(hasEnvironments: Boolean) {
 
 /** T3's rename dialog, pinned to the bottom edge as T3 does on phones. */
 @Composable
-fun BoxScope.RenameSheet(current: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+fun BoxScope.RenameSheet(current: String, onDismiss: () -> Unit, title: String = "Rename thread", onSave: (String) -> Unit) {
+    val heading = title
     var title by remember { mutableStateOf(current) }
     val valid = title.isNotBlank() && title.trim() != current
     Sheet(
-        onDismiss, "Rename thread",
+        onDismiss, heading,
         footer = {
             CButton("Cancel", onClick = onDismiss)
             CButton("Save", kind = ButtonKind.PRIMARY, enabled = valid) { onSave(title.trim()) }

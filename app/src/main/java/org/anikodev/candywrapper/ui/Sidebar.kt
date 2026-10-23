@@ -96,6 +96,7 @@ fun SidebarPanel(
     undo: UndoNotice? = null,
     initialQuery: String = "",
     initialMenu: String? = null,
+    orchestrator: OrchestratorRowInfo? = null,
 ) {
     val c = Candy.colors
     var query by rememberSaveable { mutableStateOf(initialQuery) }
@@ -128,6 +129,7 @@ fun SidebarPanel(
             if (c.redesign) RedesignHeader(query, { query = it }, data, actions) else ThreadHeader(query, { query = it }, data, actions)
         }
         ConnectionAlerts(current, environments, actions)
+        if (c.redesign && orchestrator != null) OrchestratorRow(orchestrator, actions)
         Box(Modifier.weight(1f)) {
             when {
                 archived.open -> ArchivedRows(archived, now, openKey, menuFor, { menuFor = it }, actions, ::row) { t -> Menu(t, SidebarSection.ACTIVE) }
@@ -602,6 +604,9 @@ private fun RowMenu(
                 if (caps.settle) {
                     if (section == SidebarSection.SETTLED) MenuItem("Un-settle", Icons.Undo2) { run(actions.unsettle) }
                     else MenuItem("Settle", Icons.Check) { run(actions.settle) }
+                }
+                actions.handsOff(t)?.let { off ->
+                    MenuItem(if (off) "Let the Orchestrator prompt it" else "Hands off", if (off) Icons.Shield else Icons.ShieldCheck) { run(actions.toggleHandsOff) }
                 }
                 MenuSeparator()
                 MenuItem("Rename thread", Icons.Pencil) { run(actions.rename) }

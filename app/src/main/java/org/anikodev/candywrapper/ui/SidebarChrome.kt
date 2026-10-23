@@ -125,6 +125,12 @@ class SidebarActions(
     val undo: () -> Unit = {},
     /** Pull-to-refresh: check the connection now. */
     val refresh: () -> Unit = {},
+    /** The Orchestrator's pinned row (Redesign, Settings > Experimental Orchestrator features). */
+    val openOrchestrator: () -> Unit = {},
+    val renameOrchestrator: () -> Unit = {},
+    /** Whether the Orchestrator leaves a thread alone; null while the Orchestrator is off, which hides the item. */
+    val handsOff: (ThreadSummary) -> Boolean? = { null },
+    val toggleHandsOff: (ThreadSummary) -> Unit = {},
 )
 
 /** T3's thread status (Sidebar.logic.ts `resolveThreadStatusPill`): label, text colour and dot colour. */

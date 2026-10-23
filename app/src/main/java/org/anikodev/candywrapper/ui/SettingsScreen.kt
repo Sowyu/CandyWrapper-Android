@@ -74,6 +74,7 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
     val planMode by graph.planMode.value.collectAsStateWithLifecycle()
     val workingSection by graph.workingSection.value.collectAsStateWithLifecycle()
     val style by graph.redesignStyle.collectAsStateWithLifecycle()
+    val orchestrator by graph.orchestratorStore.config.collectAsStateWithLifecycle()
     val c = Candy.colors
     val context = LocalContext.current
     val choosePhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -115,6 +116,9 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                     onPicture = graph.redesignPicture::set,
                     onChoosePhoto = { choosePhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                     onDim = { graph.redesignDim.set(it.toString()) },
+                    orchestrator = orchestrator.enabled,
+                    onOrchestrator = { on -> graph.orchestratorStore.update { it.copy(enabled = on) } },
+                    onOpenOrchestrator = { nav.push(Screen.OrchestratorSettings) },
                 )
 
                 GroupLabel("Sidebar")
@@ -207,7 +211,7 @@ private fun ConnectionRow(session: EnvironmentSession, onClick: () -> Unit) {
 /**
  * Settings > Appearance: light, dark or the system's, then Redesign (Experimental) and, while it is on,
  * its own options from the Mac's Appearance page: the accent, the picture it dithers and how much an
- * open thread dims it. Each change applies live.
+ * open thread dims it, and the Orchestrator's switch with the way to its page. Each change applies live.
  */
 @Composable
 fun AppearanceSettings(
@@ -219,6 +223,9 @@ fun AppearanceSettings(
     onPicture: (String) -> Unit,
     onChoosePhoto: () -> Unit,
     onDim: (Int) -> Unit,
+    orchestrator: Boolean = false,
+    onOrchestrator: (Boolean) -> Unit = {},
+    onOpenOrchestrator: () -> Unit = {},
 ) {
     val c = Candy.colors
     Card {
@@ -262,6 +269,17 @@ fun AppearanceSettings(
             }
             Divider()
             DimSlider(style.dim, onDim)
+            Divider()
+            SwitchRow(
+                "Experimental Orchestrator features", orchestrator,
+                detail = "A thread that manages your other threads, as in CandyWrapper on the Mac.",
+                icon = Icons.Bot, onChange = onOrchestrator,
+            )
+            if (orchestrator) {
+                Divider()
+                ListRow("Orchestrator", icon = Icons.Settings, detail = "Its machine, models, prompt and notebook",
+                    trailing = { Icon(Icons.ChevronRight, c.mutedForeground, 16.dp) }, onClick = onOpenOrchestrator)
+            }
         }
     }
 }
