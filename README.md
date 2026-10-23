@@ -29,6 +29,7 @@ Use the release APK when judging speed. Debug builds run Compose without optimiz
 - Opening a thread marks it read on the computer.
 - The thread list and recently opened threads are stored on the phone, so the app opens to them before any network.
 - T3's desktop look adapted to a phone, in light and dark, following the system or set in Settings. [docs/design.md](docs/design.md) lists the sources and where it differs from T3.
+- Settings > Appearance > Experimental Orchestrator features, in Redesign: CandyWrapper's Orchestrator, one T3 thread that manages every other thread. The phone finds the one the Mac started, pins it above the threads with its bot, and opens a chat with an Overview and Needs you. It relays events and calls to every machine only while CandyWrapper on the Mac is closed and the phone is in front. [docs/orchestrator.md](docs/orchestrator.md) explains how the two share it.
 - A Timing screen with every startup, connect and thread-open step in milliseconds, also logged to logcat with tag `CWTiming`.
 
 Not built yet: terminal, HTML renders, file mentions and slash commands, editing queued messages, dragging threads to reorder them, a custom snooze time, and fork.
