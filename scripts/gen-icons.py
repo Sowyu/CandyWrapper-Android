@@ -1,4 +1,9 @@
-# Generates app/src/main/java/.../ui/Icons.kt from CandyWrapper's IconData.generated.swift.
+# Generates app/src/main/java/org/anikodev/candywrapper/ui/Icons.kt from CandyWrapper's IconData.generated.swift.
+#
+#   python3 scripts/gen-icons.py ~/CandyWrapper/Packages/CandyKit/Sources/DesignSystem/Icons/IconData.generated.swift \
+#     scripts/Icons.kt.tpl "$(cat scripts/icon-names.txt)" > app/src/main/java/org/anikodev/candywrapper/ui/Icons.kt
+#
+# icon-names.txt is the comma-separated list of icons the app uses; add a name there and run again.
 import re, sys
 src = open(sys.argv[1]).read()
 names = sys.argv[3].split(',')

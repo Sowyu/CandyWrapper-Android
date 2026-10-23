@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
 
 /**
  * Lucide v0.564.0 (ISC licence, the version T3 pins) and T3's brand glyphs, generated from
- * CandyWrapper's IconData.generated.swift by /tmp/cwa-tools/gen_icons.py (see docs/design.md).
+ * CandyWrapper's IconData.generated.swift by scripts/gen-icons.py (see docs/design.md).
  * Do not edit the paths by hand. Each icon builds on first use.
  *
  * Lucide icons are 24-unit strokes drawn in black and tinted by [Icon]. Brand glyphs with a fixed

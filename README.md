@@ -16,13 +16,14 @@ Use the release APK when judging speed. Debug builds run Compose without optimiz
 
 - Pair a computer by pasting the link from `npx t3 pair`, or share it to the app.
 - Sign in to T3 Connect with an email code or a password, list the linked computers and connect to them.
-- Thread lists per computer grouped by project, with search, a computer switcher, status and unread marks, rename, archive and mark read or unread.
+- T3 Code's sidebar as the main navigation: a drawer on phones (header button or a swipe from the left edge), always beside the thread on tablets and unfolded foldables. It has the computer switcher, search, every project with its threads, status and unread marks, rename, archive, mark read or unread, and the archived list.
+- The app opens on the last thread you had open, drawn from the phone's copy before any network.
 - A live thread view: Markdown with coloured code blocks, tool calls that expand to their output or diff, run diffs from checkpoint cards, older history as you scroll up, and timestamps.
 - A composer: send, queue or steer during a run, Stop, model and effort, access mode, plan mode and image attachments. Start a new thread in any project.
 - Approvals and agent questions answered in place of the composer, and queued messages you can steer or cancel.
 - Opening a thread marks it read on the computer.
 - The thread list and recently opened threads are stored on the phone, so the app opens to them before any network.
-- Light and dark themes from CandyWrapper's design tokens, following the system or set in Settings.
+- T3's desktop look adapted to a phone, in light and dark, following the system or set in Settings. [docs/design.md](docs/design.md) lists the sources and where it differs from T3.
 - A Timing screen with every startup, connect and thread-open step in milliseconds, also logged to logcat with tag `CWTiming`.
 
 Not built yet: terminal, HTML renders, file mentions and slash commands, editing queued messages, and the full set of thread actions (pin, snooze, settle, fork).
@@ -36,7 +37,10 @@ export ANDROID_HOME=$HOME/Android/Sdk
 ./gradlew :core:test          # protocol, reducers, DPoP, Markdown, connect sequences
 ./gradlew :app:assembleDebug  # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:assembleRelease
+./gradlew :app:recordRoborazziDebug  # screenshots into app/src/test/snapshots
 ```
+
+The screenshots in [app/src/test/snapshots](app/src/test/snapshots) show every main screen in light and dark, on a phone and a tablet.
 
 To try it against a server from an emulator, the host machine is `http://10.0.2.2:<port>`.
 
@@ -63,4 +67,4 @@ The key is set. Its backup lives outside the repository; losing it means every i
 
 ## Reporting speed
 
-Open Timing from the environment list, then Copy. The report has the device, each environment's state and every mark since the process started. `adb logcat -s CWTiming` shows the same marks live. The budgets are in [docs/perf-budgets.md](docs/perf-budgets.md).
+Open Timing from the sidebar footer (the pulse icon), then Copy. The report has the device, each environment's state and every mark since the process started. `adb logcat -s CWTiming` shows the same marks live. The budgets are in [docs/perf-budgets.md](docs/perf-budgets.md).
