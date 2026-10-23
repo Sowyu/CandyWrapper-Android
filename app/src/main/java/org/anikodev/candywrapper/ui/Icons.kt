@@ -126,5 +126,9 @@ object Icons {
     val AlarmClockOff by stroke("alarmClockOff", "M6.87 6.87a8 8 0 1 0 11.26 11.26", "M19.9 14.25a8 8 0 0 0-9.15-9.15", "m22 6-3-3", "M6.26 18.67 4 21", "m2 2 20 20", "M4 4 2 6")
     val PinOff by stroke("pinOff", "M12 17v5", "M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89", "m2 2 20 20", "M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11")
     val Layers by stroke("layers", "M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z", "M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12", "M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17")
+    val Download by stroke("download", "M12 15V3", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "m7 10 5 5 5-5")
+    val Upload by stroke("upload", "M12 3v12", "m17 8-5-5-5 5", "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4")
+    val Bookmark by stroke("bookmark", "M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z")
+    val ArrowDownUp by stroke("arrowDownUp", "m3 16 4 4 4-4", "M7 20V4", "m21 8-4-4-4 4", "M17 4v16")
 }
 

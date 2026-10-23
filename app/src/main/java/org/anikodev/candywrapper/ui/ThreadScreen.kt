@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -195,7 +196,10 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
     }
     val settings = ComposerSettings(state.meta.model, state.meta.runtimeMode, modeChoice.mode)
 
-    Box(Modifier.fillMaxSize()) {
+    var viewing by remember(threadId) { mutableStateOf<ViewerState?>(null) }
+    val images = remember(session, threadId) { SessionImages(graph.images, session, threadId) { items, index -> viewing = ViewerState(items, index) } }
+
+    CompositionLocalProvider(LocalImages provides images) { Box(Modifier.fillMaxSize()) {
         ThreadView(
             title = state.title ?: summary?.title ?: "Thread",
             project = project?.title,
@@ -276,7 +280,8 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                 act(null) { thread.rename(title) }
             }
         }
-    }
+        viewing?.let { v -> ImageViewerDialog(v) { viewing = null } }
+    } }
 }
 
 /**

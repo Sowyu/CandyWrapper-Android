@@ -22,6 +22,7 @@ Use the release APK when judging speed. Debug builds run Compose without optimiz
 - Settings > Legacy features brings back T3's per-project sidebar and plan mode. Both are off by default, as in T3, and stay on the phone.
 - The app opens on the last thread you had open, drawn from the phone's copy before any network.
 - A live thread view: Markdown with coloured code blocks, tool calls that expand to their output or diff, run diffs from checkpoint cards, older history as you scroll up, and timestamps.
+- Images where T3 shows them: your attachments and the agent's, Markdown images, and the images a tool returned or looked at. Tap one for a full-screen viewer with pinch zoom, swipe down to close, Save to Pictures and Share.
 - A composer: send, queue or steer during a run, Stop, model and effort, access mode and image attachments, plus plan mode when it is turned on. Start a new thread in any project on any computer.
 - Approvals and agent questions answered in place of the composer, and queued messages you can steer or cancel.
 - Opening a thread marks it read on the computer.

@@ -44,6 +44,7 @@ CandyWrapper for Android copies T3 Code's desktop app, adapted to a phone. T3's 
 | A remote thread shows a machine icon with a tooltip | With All machines each card names its machine | No tooltips on touch |
 | The draft block, pull request and terminal badges on cards | Not built | They need data the shell does not carry here |
 | The Working section setting syncs with the desktop client settings | Settings > Sidebar > Working section, stored on the phone, off by default as in T3 and CandyWrapper | Client settings live in each client |
+| The expanded image preview dims the page | A black full-screen viewer with pinch zoom, swipe down to close, Save and Share | A phone's photo viewer conventions; there is no pointer to zoom with |
 | Add project in the thread header | Not built | Adding a project needs a folder on the computer |
 | Parking the open thread with no card left opens a new thread | Opens the empty state, with the sidebar | A phone lands in the sidebar to pick the next one |
 | The machine switcher (not in T3) | Lists All machines first when there are several, and starts there | The phone reads several computers; T3's sidebar always merges every connected environment |

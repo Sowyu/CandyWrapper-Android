@@ -25,6 +25,7 @@ import org.anikodev.candywrapper.core.sync.BearerCredentials
 import org.anikodev.candywrapper.core.sync.ConnectCredentials
 import org.anikodev.candywrapper.core.sync.Environments
 import org.anikodev.candywrapper.core.timing.Timeline
+import org.anikodev.candywrapper.data.ImageStore
 import org.anikodev.candywrapper.data.CacheDb
 import org.anikodev.candywrapper.data.KeystoreDPoPKey
 import org.anikodev.candywrapper.data.LazyDPoPKey
@@ -55,6 +56,9 @@ class AppGraph(private val app: Application) {
         private set
 
     val updater by lazy { Updater(app, scope) }
+
+    /** The thread's images on disk and in memory (data/ImageStore). */
+    val images by lazy { ImageStore(app.cacheDir) }
 
     /** The environment whose threads were open last, to reopen on a cold start. */
     @Volatile var lastEnvironmentId: String? = null

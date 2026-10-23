@@ -45,6 +45,7 @@ import org.anikodev.candywrapper.core.diff.ItemDetail
 import org.anikodev.candywrapper.core.diff.LineKind
 import org.anikodev.candywrapper.core.markdown.MdBlock
 import org.anikodev.candywrapper.core.markdown.MdSpan
+import org.anikodev.candywrapper.core.media.Media
 import org.anikodev.candywrapper.core.model.RowKind
 import org.anikodev.candywrapper.core.model.TurnRow
 import org.anikodev.candywrapper.core.sync.ThreadSession
@@ -145,16 +146,7 @@ private fun UserBubble(row: TurnRow) {
                 Modifier.clip(RoundedCornerShape(Radius.xxl)).background(c.messageSurface).padding(horizontal = 14.dp, vertical = 11.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (row.attachmentCount > 0) {
-                    Row(
-                        Modifier.clip(RoundedCornerShape(Radius.md)).background(c.background.copy(alpha = 0.7f)).border(1.dp, c.border, RoundedCornerShape(Radius.md))
-                            .padding(horizontal = 8.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(Icons.Image, c.mutedForeground, 14.dp)
-                        Txt(if (row.attachmentCount == 1) "1 image" else "${row.attachmentCount} images", CandyType.xs, c.mutedForeground)
-                    }
-                }
+                if (row.attachments.isNotEmpty()) MessageAttachments(row.attachments)
                 if (!row.text.isNullOrEmpty()) SelectionContainer { Txt(row.text!!, CandyType.chat, c.foreground) }
             }
         }
@@ -171,6 +163,8 @@ private fun AssistantMessage(item: TimelineRow) {
         SelectionContainer {
             MarkdownBlocks(item.markdown ?: listOf(MdBlock.Paragraph(listOf(MdSpan(row.text.orEmpty())))))
         }
+        // Images and files the agent attached to its reply.
+        if (row.attachments.isNotEmpty()) MessageAttachments(row.attachments, Modifier.padding(top = 10.dp))
         // Text arrives as whole replacements (protocol.md 7.7), so "writing" is a fact, not an animation.
         val meta = if (row.streaming) "Writing" else clockTime(row.atMs)
         if (meta.isNotEmpty()) Txt(meta, CandyType.xs.merge(TextStyle(fontFeatureSettings = "tnum")), c.mutedForeground, modifier = Modifier.padding(top = 8.dp))
@@ -340,6 +334,20 @@ private fun ToolDetail(row: TurnRow, host: TimelineHost) {
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val images = LocalImages.current
+        val threadId = images?.threadId
+        if (threadId != null) {
+            // The tool output's own images win; the file a read viewed shows only when the output has none.
+            val refs = remember(row.id, detail?.images, row.viewedImagePath) {
+                val count = detail?.images ?: 0
+                when {
+                    count > 0 -> (0 until count).map { Media.toolOutput(threadId, row.id, it) }
+                    row.viewedImagePath != null && (detail != null || !fetchable) -> listOf(Media.mediaFile(threadId, row.viewedImagePath!!))
+                    else -> emptyList()
+                }
+            }
+            for ((i, ref) in refs.withIndex()) NaturalImage(ref, onClick = { images.open(refs, i) })
+        }
         val summary = row.body ?: row.detail
         when {
             detail?.diff != null -> InlineDiff(detail.diff!!)

@@ -48,6 +48,8 @@ import org.anikodev.candywrapper.core.markdown.CodeToken
 import org.anikodev.candywrapper.core.markdown.MdBlock
 import org.anikodev.candywrapper.core.markdown.MdSpan
 import org.anikodev.candywrapper.core.markdown.TokenKind
+import org.anikodev.candywrapper.core.media.ImageRef
+import org.anikodev.candywrapper.core.media.Media
 
 /**
  * Parsed Markdown drawn after T3's `.chat-markdown` (index.css): blocks 0.65rem apart, headings
@@ -96,8 +98,25 @@ private fun Block(b: MdBlock, style: TextStyle) {
             }
         }
         is MdBlock.Table -> Table(b)
+        is MdBlock.Image -> MarkdownImage(b)
         MdBlock.Rule -> Divider()
     }
+}
+
+/**
+ * `![alt](src)` (ChatMarkdown.tsx): web images load directly; files on the computer through a
+ * signed `media-file` URL, framed. A blocked source shows its alt text.
+ */
+@Composable
+private fun MarkdownImage(b: MdBlock.Image) {
+    val c = Candy.colors
+    val images = LocalImages.current
+    val ref = remember(b, images?.threadId) { Media.markdownImage(b.src, b.alt, images?.threadId) }
+    if (ref == null || images == null) {
+        if (b.alt.isNotBlank()) Txt(b.alt, CandyType.sm, c.mutedForeground)
+        return
+    }
+    NaturalImage(ref, onClick = { images.open(listOf(ref), 0) }, framed = ref is ImageRef.Asset)
 }
 
 /** A task-list checkbox: 16dp, `rounded-sm`, filled when done. */
@@ -171,12 +190,14 @@ private fun annotate(spans: List<MdSpan>, link: Color, codeBackground: Color): A
             textDecoration = if (s.style and MdSpan.STRIKE != 0) TextDecoration.LineThrough else null,
         )
         val url = s.link
+        // An image left inline (in a table cell) reads as its alt text, linked when it is on the web.
+        val text = if (s.style and MdSpan.IMAGE != 0 && s.text.isBlank()) "image" else s.text
         if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
             withLink(LinkAnnotation.Url(url, TextLinkStyles(SpanStyle(color = link)))) {
-                withStyle(style) { append(s.text) }
+                withStyle(style) { append(text) }
             }
         } else {
-            withStyle(style) { append(s.text) }
+            withStyle(style) { append(text) }
         }
     }
 }

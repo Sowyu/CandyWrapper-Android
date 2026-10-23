@@ -3,7 +3,7 @@ package org.anikodev.candywrapper.core.markdown
 /**
  * A small GFM-flavoured Markdown parser for assistant replies, run off the main thread. It covers
  * what agents write: paragraphs, headings, fenced code, lists with task boxes, quotes, tables,
- * rules, emphasis, inline code, strikethrough and links. Single newlines are line breaks, as in
+ * rules, emphasis, inline code, strikethrough, links and images. Single newlines are line breaks, as in
  * T3 (remark-breaks, packages/shared/src/markdownPipeline.ts). The app turns the blocks into
  * Compose text; nothing here knows about the UI.
  */
@@ -15,18 +15,24 @@ sealed interface MdBlock {
     data class Quote(val blocks: List<MdBlock>) : MdBlock
     data class ListBlock(val ordered: Boolean, val start: Int, val items: List<ListItem>) : MdBlock
     data class Table(val header: List<List<MdSpan>>, val rows: List<List<List<MdSpan>>>) : MdBlock
+    /** `![alt](src)`, lifted out of its paragraph so it gets its own box. */
+    data class Image(val src: String, val alt: String) : MdBlock
     data object Rule : MdBlock
 }
 
 data class ListItem(val blocks: List<MdBlock>, val checked: Boolean?)
 
-/** A run of text with one style. [style] is a bit set of [BOLD], [ITALIC], [CODE], [STRIKE]. */
+/**
+ * A run of text with one style. [style] is a bit set of [BOLD], [ITALIC], [CODE], [STRIKE] and
+ * [IMAGE]; an image span carries its alt text and its source in [link].
+ */
 data class MdSpan(val text: String, val style: Int = 0, val link: String? = null) {
     companion object {
         const val BOLD = 1
         const val ITALIC = 2
         const val CODE = 4
         const val STRIKE = 8
+        const val IMAGE = 16
     }
 }
 
@@ -90,9 +96,28 @@ object Markdown {
             }
             val para = ArrayList<String>()
             while (i < lines.size && lines[i].isNotBlank() && (para.isEmpty() || !startsBlock(lines[i]))) para += lines[i++]
-            out += MdBlock.Paragraph(inlines(para.joinToString("\n") { it.trimStart() }))
+            paragraph(inlines(para.joinToString("\n") { it.trimStart() }), out)
         }
         return out
+    }
+
+    /** A paragraph, split around its images: each image is a block of its own, the text between stays a paragraph. */
+    private fun paragraph(spans: List<MdSpan>, out: MutableList<MdBlock>) {
+        if (spans.none { it.style and MdSpan.IMAGE != 0 }) { out += MdBlock.Paragraph(spans); return }
+        var run = ArrayList<MdSpan>()
+        fun flush() {
+            // Line breaks left between an image and the text are layout, not content.
+            val trimmed = run.dropWhile { it.text.isBlank() }.dropLastWhile { it.text.isBlank() }
+            if (trimmed.isNotEmpty()) out += MdBlock.Paragraph(trimmed)
+            run = ArrayList()
+        }
+        for (span in spans) {
+            if (span.style and MdSpan.IMAGE != 0) {
+                flush()
+                out += MdBlock.Image(span.link.orEmpty(), span.text)
+            } else run += span
+        }
+        flush()
     }
 
     private fun isClosingFence(line: String, marker: String): Boolean {
@@ -211,13 +236,21 @@ object Markdown {
                             i = close + 2
                         }
                     }
-                    (c == '[' || (c == '!' && i + 1 < to && s[i + 1] == '[')) && link == null -> {
-                        val open = if (c == '!') i + 1 else i
-                        val parsed = linkAt(open, to)
+                    c == '!' && i + 1 < to && s[i + 1] == '[' && link == null -> {
+                        val parsed = linkAt(i + 1, to)
                         if (parsed == null) { buf.append(c); i++ } else {
                             flush(style, link)
                             val (textEnd, url, end) = parsed
-                            if (textEnd > open + 1) run(open + 1, textEnd, style, url) else buf.append(url)
+                            out += MdSpan(s.substring(i + 2, textEnd), MdSpan.IMAGE, url)
+                            i = end
+                        }
+                    }
+                    c == '[' && link == null -> {
+                        val parsed = linkAt(i, to)
+                        if (parsed == null) { buf.append(c); i++ } else {
+                            flush(style, link)
+                            val (textEnd, url, end) = parsed
+                            if (textEnd > i + 1) run(i + 1, textEnd, style, url) else buf.append(url)
                             flush(style, url)
                             i = end
                         }
@@ -323,7 +356,7 @@ object Markdown {
         val out = ArrayList<MdSpan>(spans.size)
         for (s in spans) {
             val last = out.lastOrNull()
-            if (last != null && last.style == s.style && last.link == s.link) out[out.size - 1] = last.copy(text = last.text + s.text) else out += s
+            if (last != null && last.style == s.style && last.link == s.link && s.style and MdSpan.IMAGE == 0) out[out.size - 1] = last.copy(text = last.text + s.text) else out += s
         }
         return out
     }

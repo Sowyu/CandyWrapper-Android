@@ -34,11 +34,15 @@ import org.anikodev.candywrapper.core.http.await
 import org.anikodev.candywrapper.core.json.arr
 import org.anikodev.candywrapper.core.json.long
 import org.anikodev.candywrapper.core.http.json
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.anikodev.candywrapper.core.json.str
+import org.anikodev.candywrapper.core.media.AssetUrl
+import org.anikodev.candywrapper.core.media.AssetUrls
+import org.anikodev.candywrapper.core.media.ImageRef
 import org.anikodev.candywrapper.core.model.ThreadListModel
 import org.anikodev.candywrapper.core.model.DirectRoute
 import org.anikodev.candywrapper.core.model.EnvironmentKind
@@ -228,6 +232,22 @@ class EnvironmentSession(
             .await()
         response.use { if (!it.isSuccessful) throw HttpStatusError(it.code, null, null, null, null, null, url.encodedPath) }
         return UploadedAttachment(id, name, mimeType, bytes.size.toLong())
+    }
+
+    /** Signed asset URLs for this computer's images (`assets.createUrl`, protocol.md 9.7), reused until near expiry. */
+    val assetUrls = AssetUrls { resource ->
+        val result = request("assets.createUrl", buildJsonObject { put("resource", resource) }) as? JsonObject
+        result?.let(AssetUrl::from) ?: throw IOException("The computer did not return an image address.")
+    }
+
+    /**
+     * The absolute address of an image: a signed URL resolved against the route the socket uses.
+     * The signed path is the credential, so the GET needs no auth header.
+     */
+    suspend fun imageUrl(ref: ImageRef.Asset): HttpUrl {
+        val signed = assetUrls.get(ref)
+        val base = (route?.httpBase ?: _env.value.httpBase).toHttpUrl()
+        return base.resolve(signed.relativeUrl) ?: throw IOException("Bad image address.")
     }
 
     // Supervision

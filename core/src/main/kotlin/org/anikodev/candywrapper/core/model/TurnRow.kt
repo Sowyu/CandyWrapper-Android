@@ -11,6 +11,7 @@ import org.anikodev.candywrapper.core.json.bool
 import org.anikodev.candywrapper.core.json.long
 import org.anikodev.candywrapper.core.json.obj
 import org.anikodev.candywrapper.core.json.str
+import org.anikodev.candywrapper.core.media.ChatAttachment
 
 /** How the thread view draws a row. Every tool type folds into [TOOL]. */
 enum class RowKind { USER, ASSISTANT, REASONING, PLAN, TOOL, NOTICE, ERROR }
@@ -50,8 +51,10 @@ data class TurnRow(
     val checkpointId: String? = null,
     /** When the item finished, or last changed while running. Epoch ms, 0 when unknown. */
     val atMs: Long = 0,
-    /** Images and files attached to a user message. */
-    val attachmentCount: Int = 0,
+    /** Images and files on a user or assistant message. */
+    val attachments: List<ChatAttachment> = emptyList(),
+    /** The image a tool looked at (`dynamic_tool.viewedImagePath`), shown under its line. */
+    val viewedImagePath: String? = null,
 ) {
     val kind: RowKind
         get() = when (type) {
@@ -158,7 +161,8 @@ data class TurnRow(
                 questions = questions,
                 checkpointId = o.str("checkpointId"),
                 atMs = ThreadSummary.time(o.str("completedAt") ?: o.str("updatedAt") ?: o.str("startedAt")),
-                attachmentCount = o.arr("attachments")?.size ?: 0,
+                attachments = ChatAttachment.list(o),
+                viewedImagePath = o.str("viewedImagePath"),
             )
         }
 

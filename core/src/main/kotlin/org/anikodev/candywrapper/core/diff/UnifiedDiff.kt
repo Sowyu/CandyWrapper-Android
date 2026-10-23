@@ -9,6 +9,7 @@ import org.anikodev.candywrapper.core.json.WireJson
 import org.anikodev.candywrapper.core.json.arr
 import org.anikodev.candywrapper.core.json.bool
 import org.anikodev.candywrapper.core.json.str
+import org.anikodev.candywrapper.core.media.Media
 
 enum class LineKind { CONTEXT, ADDED, REMOVED, HUNK, NOTE }
 
@@ -111,7 +112,8 @@ object UnifiedDiff {
  * What an expanded tool row shows beyond its summary, read from `orchestration.getTurnItem`
  * (protocol.md 7.5): a command's output, a tool's input and output, or an edit's diff.
  */
-data class ItemDetail(val text: String?, val diff: List<DiffLine>?) {
+/** A row's fetched detail: text, a diff, and how many images its tool output holds (served as `tool-output-image` assets). */
+data class ItemDetail(val text: String?, val diff: List<DiffLine>?, val images: Int = 0) {
     companion object {
         private const val MAX_TEXT = 16 * 1024
 
@@ -132,9 +134,10 @@ data class ItemDetail(val text: String?, val diff: List<DiffLine>?) {
                 "dynamic_tool" -> ItemDetail(
                     listOfNotNull(
                         item["input"]?.let { "Input\n" + pretty(it) },
-                        item["output"]?.takeIf { it !is JsonNull }?.let { "Output\n" + pretty(it) },
+                        item["output"]?.takeIf { it !is JsonNull }?.let { "Output\n" + pretty(withoutImageData(it)) },
                     ).joinToString("\n\n").take(MAX_TEXT).ifEmpty { null },
                     null,
+                    images = if (item.bool("outputOmitted") == true) 0 else Media.toolOutputImageCount(item["output"]),
                 )
                 "subagent" -> ItemDetail(item.str("result") ?: item.str("progress") ?: item.str("prompt"), null)
                 else -> ItemDetail(null, null)
@@ -143,6 +146,14 @@ data class ItemDetail(val text: String?, val diff: List<DiffLine>?) {
 
         /** True when the stream left something out that a fetch would add (client-runtime itemDetail.ts:140-149). */
         fun worthFetching(type: String): Boolean = type == "command_execution" || type == "file_change" || type == "dynamic_tool" || type == "subagent"
+
+        /** The output with each image's base64 swapped for a marker; the images draw under the text. */
+        private fun withoutImageData(e: JsonElement): JsonElement = when {
+            e is JsonObject && e.str("type") == "image" -> JsonPrimitive("[image]")
+            e is JsonObject -> JsonObject(e.mapValues { withoutImageData(it.value) })
+            e is JsonArray -> JsonArray(e.map(::withoutImageData))
+            else -> e
+        }
 
         private fun pretty(e: JsonElement): String = when (e) {
             JsonNull -> ""
