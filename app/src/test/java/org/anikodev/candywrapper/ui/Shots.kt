@@ -1,6 +1,7 @@
 package org.anikodev.candywrapper.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 
@@ -15,6 +16,6 @@ fun shot(name: String, dark: Boolean, content: @Composable () -> Unit) {
         "src/test/snapshots/$name.${if (dark) "dark" else "light"}.png",
         RoborazziOptions(compareOptions = RoborazziOptions.CompareOptions(changeThreshold = 0.01f)),
     ) {
-        CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT) { content() }
+        CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT) { CompositionLocalProvider(LocalProjectIcons provides Fixtures.icons, content = content) }
     }
 }

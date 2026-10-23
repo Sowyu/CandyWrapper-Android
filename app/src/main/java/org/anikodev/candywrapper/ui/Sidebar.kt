@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import org.anikodev.candywrapper.core.model.ProjectSummary
 import org.anikodev.candywrapper.core.model.StatusPill
 import org.anikodev.candywrapper.core.model.ThreadSummary
 import org.anikodev.candywrapper.core.sidebar.SidebarData
@@ -111,6 +112,7 @@ fun SidebarPanel(
     fun row(thread: ThreadSummary) = RowInfo(
         thread = thread,
         project = data?.projectLabel?.get("${thread.envId}:${thread.projectId}") ?: "Other",
+        projectRef = data?.projects?.get("${thread.envId}:${thread.projectId}"),
         machine = if (tagMachines) machines[thread.envId]?.label else null,
         driver = thread.providerInstanceId?.let { machines[thread.envId]?.caps?.drivers?.get(it) },
         active = thread.key == openKey,
@@ -198,7 +200,7 @@ fun SidebarPanel(
 
 /** What a row draws besides the thread: its project's group label, its machine when tagged, its provider. */
 @Immutable
-data class RowInfo(val thread: ThreadSummary, val project: String, val machine: String?, val driver: String?, val active: Boolean)
+data class RowInfo(val thread: ThreadSummary, val project: String, val machine: String?, val driver: String?, val active: Boolean, val projectRef: ProjectSummary? = null)
 
 /**
  * The list's arrangement when it is shorter than the sidebar: rows from the top, and from
@@ -264,7 +266,7 @@ private fun ThreadHeader(query: String, onQuery: (String) -> Unit, data: Sidebar
                         Box(
                             Modifier.width(36.dp).height(36.dp).combinedClickable(role = Role.Button, onClickLabel = "Filter threads by project: ${scope.label}") { scopeOpen = true },
                             contentAlignment = Alignment.Center,
-                        ) { Monogram(scope.label) }
+                        ) { ProjectIcon(scope.representative, scope.label) }
                     }
                 }
                 ScopeMenu(scopeOpen, { scopeOpen = false }, groups, scope, data?.spansMachines == true, actions)
@@ -283,7 +285,7 @@ private fun ScopeMenu(open: Boolean, onDismiss: () -> Unit, groups: List<Sidebar
         for (g in groups) {
             MenuItem(
                 g.label, selected = g.key == scope?.key,
-                leading = { Monogram(g.label, Modifier.padding(vertical = 1.dp)) },
+                leading = { ProjectIcon(g.representative, g.label, Modifier.padding(vertical = 1.dp)) },
                 trailing = if (spans) ({ Txt(machineBadge(g), CandyType.xxs, c.mutedForeground, maxLines = 1) }) else null,
             ) { onDismiss(); actions.scopeProject(g.key) }
         }
@@ -328,7 +330,7 @@ private fun CardRow(info: RowInfo, now: Long, menuOpen: Boolean, onClick: () -> 
                 .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Monogram(info.project)
+                ProjectIcon(info.projectRef, info.project)
                 if (t.section == 0) Icon(Icons.Pin, c.mutedForeground.copy(alpha = 0.65f), 12.dp, description = "Pinned")
                 Txt(info.project, CandyType.xs, c.secondaryLabel, maxLines = 1, modifier = Modifier.weight(1f), weight = if (recede) FontWeight.Normal else FontWeight.Medium)
                 if (top != null) TopStatusLabel(top, t, now) else TimeLabel(relativeTime(t.activityAt, now), c.secondaryLabel)
@@ -440,7 +442,7 @@ private fun SlimRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(Modifier.graphicsLayer { alpha = if (info.active) 1f else 0.4f }) { Monogram(info.project) }
+            Box(Modifier.graphicsLayer { alpha = if (info.active) 1f else 0.4f }) { ProjectIcon(info.projectRef, info.project) }
             Column(Modifier.weight(1f)) {
                 Txt(t.title, CandyType.sm, titleColor, maxLines = 1)
                 if (showProject) {
@@ -613,6 +615,7 @@ fun BoxScope.NewThreadSheet(
             for (g in groups) {
                 ListRow(
                     g.label,
+                    leading = { ProjectIcon(g.representative, g.label, size = 18.dp) },
                     detail = if (g.envIds.size > 1 || machines.size > 1) g.envIds.mapNotNull { machines[it] }.joinToString(" · ") else null,
                     trailing = { Icon(Icons.ChevronRight, c.mutedForeground, 16.dp) },
                 ) { onGroup(g) }

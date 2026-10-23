@@ -21,9 +21,10 @@ Cold start:
 
 1. `CandyApp.onCreate` starts a boot thread that opens SQLite and reads every environment and its thread-list rows. Rows are plain columns, so nothing decodes JSON.
 2. The same boot thread reads the last open thread's rows (`ThreadSession.preload`, mark `cache.thread.preloaded`). `MainActivity` waits up to 400 ms for both reads, which usually finish while the activity is being created, so the first frame shows the last thread with the sidebar closed.
-3. The phone sidebar is composed 600 ms after start, off the first frame, so the first swipe finds it ready. While closed it stays composed but is not placed, so it draws nothing.
-4. Connecting starts on the boot thread right after the read, before the first frame. DNS for every known host resolves in parallel.
-5. The release APK carries a baseline profile, applied by profileinstaller on sideloaded installs, so start-up code runs compiled ahead of time.
+3. A second boot thread reads the saved project icon thumbnails (mark `cache.icons.loaded`). The first frame waits at most 150 ms for them, so the sidebar draws icons, not monograms, from the start.
+4. The phone sidebar is composed 600 ms after start, off the first frame, so the first swipe finds it ready. While closed it stays composed but is not placed, so it draws nothing.
+5. Connecting starts on the boot thread right after the read, before the first frame. DNS for every known host resolves in parallel.
+6. The release APK carries a baseline profile, applied by profileinstaller on sideloaded installs, so start-up code runs compiled ahead of time.
 
 Connecting. Each path below lists the serial round trips before the socket opens.
 
@@ -54,6 +55,7 @@ Threads:
 - Sidebar rows get the same callbacks on every update, so a thread-list change recomposes only the rows whose thread changed.
 - The new sidebar's model (project groups across computers, the sections, their sort) is rebuilt on `Dispatchers.Default` from the sessions' cached lists whenever one changes, conflated, and the last model stays on screen until the next is ready. The first frame never waits for it. A snooze's end schedules one rebuild at that time; nothing polls.
 - Images load only while their row is composed, and leaving the screen cancels the request. Each box is sized before the bytes arrive, from the size seen before or the one `assets.createUrl` read from the file's header, so the list does not jump when a picture lands. Bytes go to a 64 MB disk cache keyed by the image's identity, not its hourly signed URL; `ImageDecoder` downsamples to the drawn size on `Dispatchers.IO`, four at a time, into a 32 MB memory cache. Mark `image.fetched` times each download.
+- Project icons follow client-runtime's `projectFaviconCache`: one 96px PNG thumbnail per icon in the app's files, at most 128. An icon on screen asks its computer for the signed URL once the socket is live, at most every five minutes, one request for every row of that project. It downloads (at most 4 MiB, mark `icon.fetched`) only when the URL's revision, the file's hash, changed. Icons off screen cost nothing.
 - Tool output and edit diffs load only when a row is expanded, through `orchestration.getTurnItem`.
 
 ## Measured on the JVM

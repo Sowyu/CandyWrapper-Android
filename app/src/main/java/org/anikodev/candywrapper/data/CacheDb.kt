@@ -8,6 +8,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import org.anikodev.candywrapper.core.json.WireJson
 import org.anikodev.candywrapper.core.model.DirectRoute
 import org.anikodev.candywrapper.core.model.EnvironmentKind
+import org.anikodev.candywrapper.core.model.ProjectIconOverride
 import org.anikodev.candywrapper.core.model.ProjectSummary
 import org.anikodev.candywrapper.core.model.SavedEnvironment
 import org.anikodev.candywrapper.core.model.StatusPill
@@ -35,7 +36,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE env (id TEXT PRIMARY KEY, label TEXT NOT NULL, kind TEXT NOT NULL, http_base TEXT NOT NULL, ws_base TEXT NOT NULL, direct_routes TEXT, added_at INTEGER NOT NULL, shell_sequence INTEGER NOT NULL DEFAULT 0)")
-        db.execSQL("CREATE TABLE project (env_id TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, workspace_root TEXT NOT NULL, repo_key TEXT, repo_name TEXT, repo_short_name TEXT, updated_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (env_id, id)) WITHOUT ROWID")
+        db.execSQL("CREATE TABLE project (env_id TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, workspace_root TEXT NOT NULL, repo_key TEXT, repo_name TEXT, repo_short_name TEXT, updated_at INTEGER NOT NULL DEFAULT 0, favicon_path TEXT, icon_kind TEXT, icon_text TEXT, icon_color TEXT, PRIMARY KEY (env_id, id)) WITHOUT ROWID")
         db.execSQL("CREATE TABLE thread (env_id TEXT NOT NULL, id TEXT NOT NULL, project_id TEXT NOT NULL, title TEXT NOT NULL, pill TEXT NOT NULL, unread INTEGER NOT NULL, section INTEGER NOT NULL, order_key TEXT, sort_time INTEGER NOT NULL, activity_at INTEGER NOT NULL, working_since INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0, visited_at INTEGER NOT NULL DEFAULT 0, snoozed_until INTEGER NOT NULL DEFAULT 0, woke_at INTEGER NOT NULL DEFAULT 0, branch TEXT, provider_instance_id TEXT, return_time INTEGER NOT NULL DEFAULT 0, send_time INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (env_id, id)) WITHOUT ROWID")
         db.execSQL("CREATE TABLE thread_cache (env_id TEXT NOT NULL, thread_id TEXT NOT NULL, data BLOB NOT NULL, saved_at INTEGER NOT NULL, PRIMARY KEY (env_id, thread_id)) WITHOUT ROWID")
         db.execSQL("CREATE TABLE secret (name TEXT PRIMARY KEY, data BLOB NOT NULL) WITHOUT ROWID")
@@ -43,10 +44,12 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion in 1..3) {
+        if (oldVersion in 1..4) {
             if (oldVersion < 3) upgradeTo3(db, oldVersion)
             // Version 4 keeps the Working shelf's sort times; the next snapshot fills them.
-            for (c in listOf("return_time INTEGER NOT NULL DEFAULT 0", "send_time INTEGER NOT NULL DEFAULT 0")) db.execSQL("ALTER TABLE thread ADD COLUMN $c")
+            if (oldVersion < 4) for (c in listOf("return_time INTEGER NOT NULL DEFAULT 0", "send_time INTEGER NOT NULL DEFAULT 0")) db.execSQL("ALTER TABLE thread ADD COLUMN $c")
+            // Version 5 keeps each project's favicon path and chosen icon.
+            for (c in listOf("favicon_path TEXT", "icon_kind TEXT", "icon_text TEXT", "icon_color TEXT")) db.execSQL("ALTER TABLE project ADD COLUMN $c")
             db.execSQL("UPDATE env SET shell_sequence = 0")
             return
         }
@@ -103,11 +106,13 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
     override fun shell(envId: String): CachedShell? {
         val db = readableDatabase
         val sequence = db.rawQuery("SELECT shell_sequence FROM env WHERE id = ?", arrayOf(envId)).use { if (it.moveToFirst()) it.getLong(0) else return null }
-        val projects = db.rawQuery("SELECT id, title, workspace_root, repo_key, repo_name, repo_short_name, updated_at FROM project WHERE env_id = ?", arrayOf(envId)).use { c ->
+        val projects = db.rawQuery("SELECT id, title, workspace_root, repo_key, repo_name, repo_short_name, updated_at, favicon_path, icon_kind, icon_text, icon_color FROM project WHERE env_id = ?", arrayOf(envId)).use { c ->
             buildList {
                 while (c.moveToNext()) add(ProjectSummary(
                     c.getString(0), c.getString(1), c.getString(2), envId = envId,
                     repoKey = c.getString(3), repoName = c.getString(4), repoShortName = c.getString(5), updatedAt = c.getLong(6),
+                    faviconPath = c.getString(7),
+                    icon = c.getString(8)?.let { k -> runCatching { ProjectIconOverride.Kind.valueOf(k) }.getOrNull() }?.let { k -> ProjectIconOverride(k, c.getString(9).orEmpty(), c.getString(10) ?: "gray") },
                 ))
             }
         }
@@ -139,6 +144,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
         for (p in write.projects) insertWithOnConflict("project", null, ContentValues().apply {
             put("env_id", envId); put("id", p.id); put("title", p.title); put("workspace_root", p.workspaceRoot)
             put("repo_key", p.repoKey); put("repo_name", p.repoName); put("repo_short_name", p.repoShortName); put("updated_at", p.updatedAt)
+            put("favicon_path", p.faviconPath); put("icon_kind", p.icon?.kind?.name); put("icon_text", p.icon?.text); put("icon_color", p.icon?.color)
         }, SQLiteDatabase.CONFLICT_REPLACE)
         for (t in write.threads) insertWithOnConflict("thread", null, ContentValues().apply {
             put("env_id", envId); put("id", t.id); put("project_id", t.projectId); put("title", t.title)
@@ -206,7 +212,7 @@ class CacheDb(context: Context) : SQLiteOpenHelper(context, "cache.db", null, VE
     }
 
     private companion object {
-        const val VERSION = 4
+        const val VERSION = 5
         const val THREADS_KEPT = 40
         val ROUTES = ListSerializer(DirectRoute.serializer())
     }

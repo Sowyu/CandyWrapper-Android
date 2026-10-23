@@ -98,7 +98,7 @@ class ImageShotTest {
     private fun tool(dark: Boolean) = shot("thread-tool-image-phone", dark) {
         WithImages {
             ThreadView(
-                title = state.title!!, project = "CandyWrapper-Android", subtitle = null, subtitleError = false,
+                title = state.title!!, project = Fixtures.projects[1], subtitle = null, subtitleError = false,
                 state = state.copy(items = listOf(TimelineRow(tool, null))), host = host, workingSince = 0, working = false, onLoadOlder = {},
             ) { ThreadShotTest.ThreadComposer() }
         }
@@ -108,7 +108,7 @@ class ImageShotTest {
     private fun thread(dark: Boolean) = shot("thread-images-phone", dark) {
         WithImages {
             ThreadView(
-                title = state.title!!, project = "CandyWrapper-Android", subtitle = null, subtitleError = false,
+                title = state.title!!, project = Fixtures.projects[1], subtitle = null, subtitleError = false,
                 state = state, host = host, workingSince = 0, working = false, onLoadOlder = {},
             ) { ThreadShotTest.ThreadComposer() }
         }

@@ -1,5 +1,6 @@
 package org.anikodev.candywrapper.ui
 
+import org.anikodev.candywrapper.core.model.ProjectSummary
 import org.anikodev.candywrapper.core.stash.Restored
 import org.anikodev.candywrapper.core.stash.NewStashImage
 import kotlinx.coroutines.withContext
@@ -247,7 +248,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
     CompositionLocalProvider(LocalImages provides images) { Box(Modifier.fillMaxSize()) {
         ThreadView(
             title = state.title ?: summary?.title ?: "Thread",
-            project = project?.title,
+            project = project,
             subtitle = subtitle,
             subtitleError = !live && state.items.isEmpty(),
             state = state,
@@ -349,7 +350,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
 @Composable
 fun ThreadView(
     title: String,
-    project: String?,
+    project: ProjectSummary?,
     subtitle: String?,
     subtitleError: Boolean,
     state: ThreadSession.State,
@@ -370,7 +371,7 @@ fun ThreadView(
             title, subtitle = subtitle,
             subtitleColor = if (subtitleError) c.errorForeground else c.mutedForeground,
             leading = if (!shell.wide) ({ IconButton(Icons.PanelLeft, "Open the sidebar", tint = c.foreground, onClick = shell.openSidebar) }) else null,
-            titleLead = project?.let { p -> { Monogram(p) } },
+            titleLead = project?.let { p -> { ProjectIcon(p, p.title) } },
             onTitleClick = { actions = true },
         ) {
             Box {
@@ -502,10 +503,10 @@ fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: S
     }
 
     Column(Modifier.fillMaxSize().background(c.background).windowInsetsPadding(BottomInsets)) {
-        TopBar("New thread", onBack = { nav.pop() }, subtitle = if (live) null else connection.label(), titleLead = project?.title?.let { p -> { Monogram(p) } })
+        TopBar("New thread", onBack = { nav.pop() }, subtitle = if (live) null else connection.label(), titleLead = project?.let { p -> { ProjectIcon(p, p.title) } })
         Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Monogram(project?.title ?: "?", size = 20.dp)
+                ProjectIcon(project, project?.title ?: "?", size = 20.dp)
                 Spacer(Modifier.width(8.dp))
                 Txt(project?.title ?: "Project", CandyType.smMedium, c.mutedForeground)
             }

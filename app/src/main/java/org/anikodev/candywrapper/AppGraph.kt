@@ -27,6 +27,7 @@ import org.anikodev.candywrapper.core.sync.ConnectCredentials
 import org.anikodev.candywrapper.core.sync.Environments
 import org.anikodev.candywrapper.core.timing.Timeline
 import org.anikodev.candywrapper.data.ImageStore
+import org.anikodev.candywrapper.data.ProjectIconStore
 import org.anikodev.candywrapper.data.CacheDb
 import org.anikodev.candywrapper.data.KeystoreDPoPKey
 import org.anikodev.candywrapper.data.LazyDPoPKey
@@ -63,6 +64,9 @@ class AppGraph(private val app: Application) {
 
     /** The thread's images on disk and in memory (data/ImageStore). */
     val images by lazy { ImageStore(app.cacheDir) }
+
+    /** Project icons, read back on the boot thread so the first frame has them (data/ProjectIconStore). */
+    val projectIcons = ProjectIconStore(app.filesDir, scope) { environments.session(it) }
 
     /** The environment whose threads were open last, to reopen on a cold start. */
     @Volatile var lastEnvironmentId: String? = null
@@ -108,6 +112,8 @@ class AppGraph(private val app: Application) {
 
     fun boot() = thread(name = "cw-boot") {
         val start = Timeline.nowMs()
+        // Icon thumbnails decode beside the SQLite read and are in memory before the first frame.
+        val icons = thread(name = "cw-icons") { Timeline.timed("cache.icons.loaded") { projectIcons.hydrate() } }
         db = CacheDb(app)
         secrets = SecretBox(db)
         clerk = ClerkClient(secrets, ClerkClient.Device(Build.VERSION.RELEASE, BuildConfig.VERSION_NAME, app.packageName, Build.MODEL))
@@ -128,6 +134,7 @@ class AppGraph(private val app: Application) {
         // The first frame shows the last thread, so its rows are read here, while the activity is created.
         val reopen = lastThreadId?.let { t -> lastEnvironmentId?.let(environments::session)?.thread(t) }
         if (reopen != null) Timeline.timed("cache.thread.preloaded") { reopen.preload() }
+        icons.join(ICONS_WAIT_MS)
         _readyFlow.value = true
         ready.countDown()
 
@@ -217,6 +224,8 @@ class AppGraph(private val app: Application) {
     companion object {
         /** [machineScope] for every machine at once. */
         const val ALL_MACHINES = "all"
+        /** How long the first frame waits for icon thumbnails; past it the monograms show and the icons land after. */
+        private const val ICONS_WAIT_MS = 150L
         private const val LEGACY_SIDEBAR = "legacy_sidebar"
         private const val PLAN_MODE = "plan_mode"
         private const val MACHINE_SCOPE = "machine_scope"

@@ -1,12 +1,20 @@
 package org.anikodev.candywrapper.ui
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import androidx.compose.ui.graphics.asImageBitmap
+import org.anikodev.candywrapper.core.media.SvgLite
 import org.anikodev.candywrapper.core.model.EnvironmentKind
+import org.anikodev.candywrapper.core.model.ProjectIconOverride
 import org.anikodev.candywrapper.core.model.ProjectSummary
 import org.anikodev.candywrapper.core.model.StatusPill
 import org.anikodev.candywrapper.core.model.ThreadListModel
 import org.anikodev.candywrapper.core.model.ThreadSummary
 import org.anikodev.candywrapper.core.sidebar.SidebarModel
 import org.anikodev.candywrapper.core.sync.ConnectionState
+import org.anikodev.candywrapper.data.ProjectIconSource
+import org.anikodev.candywrapper.data.ProjectIconStore
 
 /**
  * Sample data for the screenshot tests: a fixed clock, two machines that share the t3code
@@ -38,8 +46,38 @@ object Fixtures {
 
     val miniProjects = listOf(
         ProjectSummary("q1", "t3code", "/home/anika/t3code", envId = MINI, repoKey = T3, repoShortName = "t3code"),
-        ProjectSummary("q2", "homelab", "/home/anika/homelab", envId = MINI),
+        ProjectSummary("q2", "homelab", "/home/anika/homelab", envId = MINI, icon = ProjectIconOverride(ProjectIconOverride.Kind.MONOGRAM, "HL", "emerald")),
     )
+
+    /**
+     * Icon files as the store would hold them: t3code's an SVG drawn through [SvgLite], the app's
+     * a bitmap. demo-repo has none and keeps its monogram; homelab chose a monogram.
+     */
+    val icons = object : ProjectIconSource {
+        private val t3 by lazy {
+            ProjectIconStore.rasterize(SvgLite.parse(
+                """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#0a0a0a"/>""" +
+                    """<path d="M7 10h10v3h-3.5v10h-3V13H7z" fill="#fff"/>""" +
+                    """<path d="M19.5 10.5h5l-3 4.5a4 4 0 1 1-3 6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
+            )!!)!!.asImageBitmap()
+        }
+        private val app by lazy {
+            val b = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(b)
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+            paint.color = 0xFF7A3E6E.toInt(); canvas.drawRoundRect(0f, 0f, 96f, 96f, 20f, 20f, paint)
+            paint.color = 0xFFFFD6EC.toInt(); canvas.drawCircle(48f, 48f, 24f, paint)
+            b.asImageBitmap()
+        }
+
+        override fun peek(p: ProjectSummary) = when (p.title) {
+            "t3code" -> t3
+            "CandyWrapper-Android" -> app
+            else -> null
+        }
+
+        override suspend fun refresh(p: ProjectSummary) = Unit
+    }
 
     val threads = listOf(
         thread("t1", "p2", "Copy T3's sidebar into the phone app", StatusPill.WORKING, 1, branch = "feat/sidebar-v2"),

@@ -7,6 +7,7 @@ import android.view.ViewTreeObserver
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -14,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.anikodev.candywrapper.core.timing.Timeline
 import org.anikodev.candywrapper.ui.App
 import org.anikodev.candywrapper.ui.CandyTheme
+import org.anikodev.candywrapper.ui.LocalProjectIcons
 import org.anikodev.candywrapper.ui.ThemeChoice
 import android.graphics.Color
 import androidx.activity.SystemBarStyle
@@ -48,7 +50,7 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(bar, bar)
             }
             CandyTheme(theme) {
-                if (ready) App(graph, sharedText) { sharedText = null }
+                if (ready) CompositionLocalProvider(LocalProjectIcons provides graph.projectIcons) { App(graph, sharedText) { sharedText = null } }
             }
         }
         reportFirstFrame(window.decorView)

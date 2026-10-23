@@ -21,7 +21,7 @@ class ThreadShotTest {
             bottom: @Composable () -> Unit = { ThreadComposer() },
         ) {
             ThreadView(
-                title = state.title!!, project = "CandyWrapper-Android", subtitle = null, subtitleError = false,
+                title = state.title!!, project = Fixtures.projects[1], subtitle = null, subtitleError = false,
                 state = state, host = ThreadFixtures.host(), workingSince = Fixtures.NOW - 4 * 60_000, working = false,
                 onLoadOlder = {},
             ) { bottom() }

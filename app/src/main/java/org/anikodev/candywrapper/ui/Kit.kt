@@ -53,8 +53,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Modifier.Node
@@ -99,6 +102,10 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import java.text.Normalizer
+import org.anikodev.candywrapper.core.media.ProjectIcons
+import org.anikodev.candywrapper.core.model.ProjectIconOverride
+import org.anikodev.candywrapper.core.model.ProjectSummary
+import org.anikodev.candywrapper.data.ProjectIconSource
 import kotlinx.coroutines.launch
 
 // T3's controls (apps/web/src/components/ui/*), built from the tokens in Theme.kt. Sizes are T3's
@@ -476,6 +483,7 @@ fun ListRow(
     modifier: Modifier = Modifier,
     detail: String? = null,
     icon: ImageVector? = null,
+    leading: (@Composable () -> Unit)? = null,
     labelColor: Color = Candy.colors.foreground,
     selected: Boolean = false,
     enabled: Boolean = true,
@@ -491,6 +499,7 @@ fun ListRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (icon != null) Icon(icon, if (enabled) c.mutedForeground else c.mutedForeground.copy(alpha = 0.64f), 18.dp)
+        if (leading != null) leading()
         Column(Modifier.weight(1f)) {
             Txt(label, CandyType.base, if (enabled) labelColor else c.mutedForeground, maxLines = 2)
             if (detail != null) Txt(detail, CandyType.sm, c.mutedForeground, maxLines = 3)
@@ -771,8 +780,14 @@ fun projectIdentity(title: String): Pair<String, Int> {
  */
 @Composable
 fun Monogram(title: String, modifier: Modifier = Modifier, size: Dp = 16.dp) {
-    val c = Candy.colors
     val (letters, index) = remember(title) { projectIdentity(title) }
+    Monogram(letters, index, modifier, size)
+}
+
+/** A monogram with chosen [letters] in the colour at [index] of `ProjectIconColor`. */
+@Composable
+fun Monogram(letters: String, index: Int, modifier: Modifier = Modifier, size: Dp = 16.dp) {
+    val c = Candy.colors
     val color = Color(if (c.dark) MonogramColors[index].second else MonogramColors[index].first)
     val measurer = rememberTextMeasurer(cacheSize = 4)
     // 8.25px in the 16px tile whatever the system font scale, since the tile does not grow either.
@@ -787,6 +802,37 @@ fun Monogram(title: String, modifier: Modifier = Modifier, size: Dp = 16.dp) {
         val sy = this.size.width / 16.dp.toPx()
         scale(sx, sy, pivot = Offset(this.size.width / 2, this.size.height / 2)) {
             drawText(layout, topLeft = Offset((this.size.width - layout.size.width) / 2f, (this.size.height - layout.size.height) / 2f))
+        }
+    }
+}
+
+/** The app's project icons; null in screenshot tests that draw monograms only. */
+val LocalProjectIcons = staticCompositionLocalOf<ProjectIconSource?> { null }
+
+/**
+ * `ProjectFavicon`: the project's chosen icon, else its icon file, else the monogram for [label].
+ * The file is a thumbnail drawn at [size] with T3's `rounded-[25%] object-contain`; the monogram
+ * holds the same box until it lands, so nothing moves. A lucide choice draws the monogram in the
+ * chosen colour, as T3's mobile app does without the lucide set.
+ */
+@Composable
+fun ProjectIcon(project: ProjectSummary?, label: String, modifier: Modifier = Modifier, size: Dp = 16.dp) {
+    val icon = project?.icon
+    when (icon?.kind) {
+        ProjectIconOverride.Kind.MONOGRAM -> Monogram(icon.text, ProjectIcons.COLORS.indexOf(icon.color).coerceAtLeast(0), modifier, size)
+        ProjectIconOverride.Kind.LUCIDE -> Monogram(remember(label) { projectIdentity(label).first }, ProjectIcons.COLORS.indexOf(icon.color).coerceAtLeast(0), modifier, size)
+        ProjectIconOverride.Kind.EMOJI -> Box(modifier.size(size), contentAlignment = Alignment.Center) {
+            // `text-[length:80cqh]`: the emoji fills 80% of the box whatever the font scale.
+            val fontSize = with(LocalDensity.current) { (size * 0.8f).toSp() }
+            BasicText(icon.text, style = TextStyle(fontSize = fontSize, lineHeight = fontSize), maxLines = 1)
+        }
+        null -> {
+            val icons = LocalProjectIcons.current
+            val wanted = project?.takeIf { icons != null && ProjectIcons.wantsFile(it) }
+            if (icons != null && wanted != null) LaunchedEffect(icons, wanted) { icons.refresh(wanted) }
+            val image = if (icons != null && wanted != null) icons.peek(wanted) else null
+            if (image != null) Image(image, null, modifier.size(size).clip(RoundedCornerShape(percent = 25)), contentScale = ContentScale.Fit)
+            else Monogram(label, modifier, size)
         }
     }
 }

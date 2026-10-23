@@ -224,7 +224,7 @@ private fun ProjectHeader(group: ProjectGroup, collapsed: Boolean, onToggle: () 
     ) {
         Icon(Icons.ChevronRight, c.mutedForeground.copy(alpha = 0.7f), 14.dp, Modifier.rotate(turn))
         Spacer(Modifier.width(8.dp))
-        Monogram(project?.title ?: "Other")
+        ProjectIcon(project, project?.title ?: "Other")
         Spacer(Modifier.width(8.dp))
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             Txt(project?.title ?: "Other", CandyType.smMedium, c.sidebarForeground.copy(alpha = 0.9f), maxLines = 1, modifier = Modifier.weight(1f, fill = false))
