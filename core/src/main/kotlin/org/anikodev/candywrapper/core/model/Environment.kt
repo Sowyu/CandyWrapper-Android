@@ -41,7 +41,20 @@ data class ProjectSummary(
     val repoShortName: String? = null,
     /** `updatedAt`, else `createdAt`, in epoch ms. */
     val updatedAt: Long = 0,
+    /** `faviconPath`: the icon file the user picked in the workspace; null lets the server look for one. */
+    val faviconPath: String? = null,
+    /** `projectIcon`: the user's chosen icon, drawn instead of the favicon. */
+    val icon: ProjectIconOverride? = null,
 ) {
     /** `env:project`, unique across computers. */
     val key: String get() = "$envId:$id"
+}
+
+/**
+ * contracts `ReceivedProjectIcon` (project.ts): a monogram, an emoji or a lucide icon. [text] is the
+ * monogram's letters, the emoji or the lucide name; [color] one of `ProjectIconColor`.
+ */
+@Serializable
+data class ProjectIconOverride(val kind: Kind, val text: String, val color: String = "gray") {
+    enum class Kind { MONOGRAM, EMOJI, LUCIDE }
 }

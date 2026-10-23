@@ -6,6 +6,7 @@ import org.anikodev.candywrapper.core.json.long
 import org.anikodev.candywrapper.core.json.obj
 import org.anikodev.candywrapper.core.json.str
 import org.anikodev.candywrapper.core.json.arr
+import org.anikodev.candywrapper.core.media.ProjectIcons
 import org.anikodev.candywrapper.core.model.ProjectSummary
 import org.anikodev.candywrapper.core.model.ThreadListModel
 import org.anikodev.candywrapper.core.model.ThreadSummary
@@ -163,6 +164,8 @@ class ShellProjection(cached: CachedShell? = null, private val envId: String = "
                 repoName = if (origin != null) origin.str("displayName") ?: origin.str("canonicalKey") else identity?.str("displayName"),
                 repoShortName = identity?.str("name"),
                 updatedAt = ThreadSummary.time(o.str("updatedAt")).takeIf { it > 0 } ?: ThreadSummary.time(o.str("createdAt")),
+                faviconPath = o.str("faviconPath"),
+                icon = ProjectIcons.override(o.obj("projectIcon")),
             )
         }
 
