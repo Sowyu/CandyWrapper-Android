@@ -1,5 +1,6 @@
 package org.anikodev.candywrapper.ui
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,8 +11,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -20,22 +23,26 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.anikodev.candywrapper.core.diff.DiffLine
 import org.anikodev.candywrapper.core.diff.ItemDetail
+import org.anikodev.candywrapper.core.diff.LineKind
 import org.anikodev.candywrapper.core.markdown.MdBlock
 import org.anikodev.candywrapper.core.markdown.MdSpan
 import org.anikodev.candywrapper.core.model.RowKind
@@ -50,71 +57,109 @@ import org.anikodev.candywrapper.core.sync.ToolGroup
  */
 @Stable
 class TimelineHost(
-    val thread: ThreadSession,
+    private val loadItem: suspend (String) -> ItemDetail,
     val expanded: MutableMap<String, Boolean>,
     val details: MutableMap<String, ItemDetail>,
     val openDiff: (checkpointId: String, title: String) -> Unit,
 ) {
     fun isOpen(key: String) = expanded[key] == true
 
-    /** Fetches a row's full item and reads it off the main thread. */
-    suspend fun load(itemId: String): ItemDetail = try {
-        val item = thread.fullItem(itemId)
-        withContext(Dispatchers.Default) { ItemDetail.from(item) }
-    } catch (e: kotlinx.coroutines.CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        ItemDetail("Could not load the output: ${e.message ?: "network error"}.", null)
-    }
+    suspend fun load(itemId: String): ItemDetail = loadItem(itemId)
     fun toggle(key: String) { expanded[key] = !(expanded[key] ?: false) }
+
+    companion object {
+        /** Fetches a row's full item through `orchestration.getTurnItem` and reads it off the main thread. */
+        fun forThread(thread: ThreadSession, expanded: MutableMap<String, Boolean>, details: MutableMap<String, ItemDetail>, openDiff: (String, String) -> Unit) =
+            TimelineHost({ id ->
+                try {
+                    val item = thread.fullItem(id)
+                    withContext(Dispatchers.Default) { ItemDetail.from(item) }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    ItemDetail("Could not load the output: ${e.message ?: "network error"}.", null)
+                }
+            }, expanded, details, openDiff)
+    }
+}
+
+/** Space above a row, by kind: T3 spaces messages apart and packs work-log lines together. */
+fun rowGap(item: org.anikodev.candywrapper.core.sync.TimelineItem): Int = when (item) {
+    is ToolGroup -> 2
+    is TimelineRow -> when {
+        item.row.type == "checkpoint" -> 12
+        item.kind == RowKind.USER -> 24
+        item.kind == RowKind.ASSISTANT -> 12
+        item.kind == RowKind.NOTICE -> 12
+        item.kind == RowKind.PLAN || item.kind == RowKind.ERROR -> 12
+        else -> 2
+    }
 }
 
 @Composable
 fun RowView(item: TimelineRow, host: TimelineHost) {
     val row = item.row
+    val c = Candy.colors
     when {
-        row.type == "checkpoint" -> CheckpointCard(row, host)
+        row.type == "checkpoint" -> ChangedFilesCard(row, host)
         row.kind == RowKind.USER -> UserBubble(row)
         row.kind == RowKind.ASSISTANT -> AssistantMessage(item)
-        row.kind == RowKind.REASONING -> Collapsible(Icons.Brain, if (row.streaming) "Thinking" else "Thought", host.isOpen(row.id), { host.toggle(row.id) }) {
-            Txt(row.text.orEmpty(), CandyType.small, Candy.colors.mutedForeground)
+        row.kind == RowKind.REASONING -> {
+            val open = host.isOpen(row.id)
+            val text = row.text.orEmpty().trim()
+            WorkLogLine(
+                Icons.Brain, if (row.streaming && text.isEmpty()) "Thinking" else text.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: "Thought",
+                onClick = if (text.contains('\n') || text.length > 80) ({ host.toggle(row.id) }) else null, open = open,
+            ) {
+                Txt(text, CandyType.sm, c.mutedForeground)
+            }
         }
         row.kind == RowKind.PLAN -> PlanCard(item)
         row.kind == RowKind.TOOL -> ToolLine(row, host)
-        row.kind == RowKind.NOTICE -> Txt(
-            listOfNotNull(row.title, row.text?.takeIf { it != row.title }).joinToString(" · "),
-            CandyType.meta, Candy.colors.mutedForeground, align = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        )
-        else -> Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.lg)).background(Candy.colors.errorSurface).padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(Icons.CircleAlert, Candy.colors.errorForeground, 16.dp, Modifier.padding(top = 1.dp))
-            Txt(row.text ?: row.title, CandyType.small, Candy.colors.errorForeground)
-        }
+        row.kind == RowKind.NOTICE -> SystemDivider(listOfNotNull(row.title, row.text?.takeIf { it != row.title }).joinToString(" · "))
+        else -> Alert(row.text ?: row.title, NoticeTone.ERROR)
     }
 }
 
+/** `TimelineSystemDivider`: a centred label between two hairlines. */
+@Composable
+private fun SystemDivider(text: String) {
+    val c = Candy.colors
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.weight(1f).height(1.dp).background(c.border.copy(alpha = c.border.alpha * 0.7f)))
+        Txt(text, CandyType.xs, c.mutedForeground, maxLines = 2, align = TextAlign.Center, modifier = Modifier.widthIn(max = 280.dp))
+        Box(Modifier.weight(1f).height(1.dp).background(c.border.copy(alpha = c.border.alpha * 0.7f)))
+    }
+}
+
+/**
+ * T3's user message: `max-w-[80%] rounded-2xl bg-message p-3`, right-aligned, with its time under
+ * it (T3 shows the time row on touch screens without hover).
+ */
 @Composable
 private fun UserBubble(row: TurnRow) {
     val c = Candy.colors
-    val maxWidth = (LocalConfiguration.current.screenWidthDp * 0.86f).dp
-    Column(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalAlignment = Alignment.End) {
-        Column(
-            Modifier.widthIn(max = maxWidth).clip(RoundedCornerShape(Radius.composer)).background(c.messageSurface)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            if (!row.text.isNullOrEmpty()) SelectionContainer { Txt(row.text!!, CandyType.body, c.foreground) }
-            if (row.attachmentCount > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Paperclip, c.mutedForeground, 13.dp)
-                    Txt(if (row.attachmentCount == 1) "1 attachment" else "${row.attachmentCount} attachments", CandyType.meta, c.mutedForeground)
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+        Box(Modifier.fillMaxWidth(0.85f), contentAlignment = Alignment.CenterEnd) {
+            Column(
+                Modifier.clip(RoundedCornerShape(Radius.xxl)).background(c.messageSurface).padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (row.attachmentCount > 0) {
+                    Row(
+                        Modifier.clip(RoundedCornerShape(Radius.md)).background(c.background.copy(alpha = 0.7f)).border(1.dp, c.border, RoundedCornerShape(Radius.md))
+                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(Icons.Image, c.mutedForeground, 14.dp)
+                        Txt(if (row.attachmentCount == 1) "1 image" else "${row.attachmentCount} images", CandyType.xs, c.mutedForeground)
+                    }
                 }
+                if (!row.text.isNullOrEmpty()) SelectionContainer { Txt(row.text!!, CandyType.chat, c.foreground) }
             }
         }
         val time = clockTime(row.atMs)
-        if (time.isNotEmpty()) Txt(time, CandyType.meta, c.mutedForeground, modifier = Modifier.padding(top = 4.dp, end = 4.dp))
+        if (time.isNotEmpty()) Txt(time, CandyType.xs.merge(TextStyle(fontFeatureSettings = "tnum")), c.mutedForeground, modifier = Modifier.padding(top = 6.dp, end = 4.dp))
     }
 }
 
@@ -128,28 +173,34 @@ private fun AssistantMessage(item: TimelineRow) {
         }
         // Text arrives as whole replacements (protocol.md 7.7), so "writing" is a fact, not an animation.
         val meta = if (row.streaming) "Writing" else clockTime(row.atMs)
-        if (meta.isNotEmpty()) Txt(meta, CandyType.meta, c.mutedForeground, modifier = Modifier.padding(top = 6.dp))
+        if (meta.isNotEmpty()) Txt(meta, CandyType.xs.merge(TextStyle(fontFeatureSettings = "tnum")), c.mutedForeground, modifier = Modifier.padding(top = 8.dp))
     }
 }
 
+/** A proposed plan or to-do list on T3's card. */
 @Composable
 private fun PlanCard(item: TimelineRow) {
     val c = Candy.colors
+    val shape = RoundedCornerShape(Radius.xl)
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.lg)).background(c.card).border(1.dp, c.border, RoundedCornerShape(Radius.lg)).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().clip(shape).background(c.card).border(1.dp, c.border, shape).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.ListTodo, c.mutedForeground, 16.dp)
-            Txt(item.row.title, CandyType.label, c.mutedForeground)
+            Txt(item.row.title, CandyType.smMedium, c.foreground)
         }
         MarkdownBlocks(item.markdown ?: emptyList())
     }
 }
 
-/** The changed files of a run and the way into its diff (T3's "1 changed file +18 -0, Open diff"). */
+/**
+ * The changed files of a run and the way into its diff (ChangedFilesTree.tsx): a `rounded-lg
+ * bg-secondary` card, "N changed files +a -d" and Open diff on top, one row per file with its
+ * icon, mono path and counts.
+ */
 @Composable
-private fun CheckpointCard(row: TurnRow, host: TimelineHost) {
+private fun ChangedFilesCard(row: TurnRow, host: TimelineHost) {
     val c = Candy.colors
     val files = remember(row.body) {
         row.body?.lines()?.filter { it.isNotBlank() }?.map { line ->
@@ -158,37 +209,53 @@ private fun CheckpointCard(row: TurnRow, host: TimelineHost) {
         }.orEmpty()
     }
     if (files.isEmpty()) {
-        Txt(row.text ?: "No files changed", CandyType.meta, c.mutedForeground, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        SystemDivider(row.text ?: "No files changed")
         return
     }
+    val (adds, dels) = remember(files) {
+        files.sumOf { it.second.removePrefix("+").toIntOrNull() ?: 0 } to files.sumOf { it.third.removePrefix("-").toIntOrNull() ?: 0 }
+    }
     val canOpen = row.checkpointId != null
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.lg)).background(c.card).border(1.dp, c.border, RoundedCornerShape(Radius.lg))) {
+    val shape = RoundedCornerShape(Radius.lg)
+    val fill = if (c.dark) c.input.copy(alpha = c.input.alpha * 0.2f) else c.secondary
+    Column(Modifier.fillMaxWidth().clip(shape).background(fill).let { if (c.dark) it else it.border(1.dp, c.border.copy(alpha = 0.6f), shape) }) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 44.dp)
                 .let { if (canOpen) it.clickable(role = Role.Button, onClickLabel = "Open diff") { host.openDiff(row.checkpointId!!, row.text ?: "Changes") } else it }
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .padding(start = 12.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Txt(row.text ?: "Changes", CandyType.uiMedium, c.foreground, modifier = Modifier.weight(1f))
-            if (canOpen) {
-                Icon(Icons.FileDiff, c.mutedForeground, 15.dp)
-                Spacer(Modifier.width(4.dp))
-                Txt("Open diff", CandyType.small, c.mutedForeground)
+            Txt(if (files.size == 1) "1 changed file" else "${files.size} changed files", CandyType.smMedium, c.foreground, maxLines = 1)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
+                Txt("+$adds", CandyType.xs.copy(fontFamily = FontFamily.Monospace), c.diffAdditionForeground)
+                Txt("-$dels", CandyType.xs.copy(fontFamily = FontFamily.Monospace), c.diffDeletionForeground)
             }
-        }
-        Divider()
-        Column(Modifier.padding(vertical = 6.dp)) {
-            for ((path, add, del) in files.take(8)) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Txt(path.substringAfterLast('/'), CandyType.monoSmall, c.foreground, maxLines = 1, modifier = Modifier.weight(1f))
-                    Txt(add, CandyType.monoSmall, c.diffAdditionForeground)
-                    Spacer(Modifier.width(8.dp))
-                    Txt(del, CandyType.monoSmall, c.diffDeletionForeground)
+            if (canOpen) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(Icons.FileDiff, c.mutedForeground, 14.dp)
+                    Txt("Open diff", CandyType.sm, c.mutedForeground)
                 }
             }
-            if (files.size > 8) Txt("${files.size - 8} more", CandyType.meta, c.mutedForeground, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
+        }
+        Column(Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp)) {
+            for ((path, add, del) in files.take(8)) {
+                Row(Modifier.fillMaxWidth().height(30.dp).padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(fileIcon(path), c.mutedForeground.copy(alpha = 0.75f), 14.dp)
+                    Txt(path.substringAfterLast('/'), CandyType.xs.copy(fontFamily = FontFamily.Monospace), c.mutedForeground, maxLines = 1, modifier = Modifier.weight(1f))
+                    Txt(add, CandyType.xxs.copy(fontFamily = FontFamily.Monospace), c.diffAdditionForeground)
+                    Txt(del, CandyType.xxs.copy(fontFamily = FontFamily.Monospace), c.diffDeletionForeground)
+                }
+            }
+            if (files.size > 8) Txt("${files.size - 8} more", CandyType.xs, c.mutedForeground, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
         }
     }
+}
+
+private fun fileIcon(path: String): ImageVector = when (path.substringAfterLast('.', "").lowercase()) {
+    "md", "txt", "rst" -> Icons.FileText
+    "" -> Icons.File
+    else -> Icons.FileCode2
 }
 
 private fun toolIcon(type: String): ImageVector = when (type) {
@@ -203,32 +270,63 @@ private fun toolIcon(type: String): ImageVector = when (type) {
     else -> Icons.Wrench
 }
 
+/**
+ * T3's work log line (WorkLog.tsx `WorkLogLine`): an icon in a 24dp slot and the label in
+ * `text-sm text-secondary-label`, truncated; tapping a line with detail opens it beneath, indented
+ * past the icon (`ms-7`).
+ */
+@Composable
+private fun WorkLogLine(
+    icon: ImageVector,
+    label: String,
+    detail: String? = null,
+    iconTint: Color? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+    open: Boolean = false,
+    state: String? = null,
+    content: (@Composable () -> Unit)? = null,
+) {
+    val c = Candy.colors
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 32.dp).clip(RoundedCornerShape(Radius.md))
+                .let { if (onClick != null) it.clickable(role = Role.Button, onClickLabel = if (open) "Collapse" else "Expand", onClick = onClick) else it }
+                .let { m -> if (state != null) m.semantics { stateDescription = state } else m }
+                .padding(horizontal = 2.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { Icon(icon, iconTint ?: c.iconMuted, 16.dp) }
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Txt(label, CandyType.sm, c.secondaryLabel, maxLines = 1, modifier = Modifier.weight(1f, fill = detail == null))
+                if (detail != null) Txt(detail, CandyType.sm, c.mutedForeground.copy(alpha = 0.65f), maxLines = 1, modifier = Modifier.weight(1f))
+            }
+            if (trailing != null) trailing()
+            if (onClick != null) Chevron(open)
+        }
+        if (open && content != null) Box(Modifier.padding(start = 30.dp, top = 2.dp, bottom = 8.dp)) { content() }
+    }
+}
+
+/** A disclosure chevron that turns a quarter over T3's 150 ms. */
+@Composable
+private fun Chevron(open: Boolean) {
+    val turn by animateFloatAsState(if (open) 90f else 0f, Motion.fast(), label = "chevron")
+    Icon(Icons.ChevronRight, Candy.colors.mutedForeground, 14.dp, Modifier.rotate(turn))
+}
+
 @Composable
 fun ToolLine(row: TurnRow, host: TimelineHost) {
     val c = Candy.colors
     val open = host.isOpen(row.id)
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 36.dp).clip(RoundedCornerShape(Radius.md))
-                .clickable(role = Role.Button, onClickLabel = if (open) "Collapse" else "Expand") { host.toggle(row.id) }
-                .semantics { stateDescription = if (row.failed) "Failed" else if (row.running) "Running" else "Done" }
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(toolIcon(row.type), if (row.failed) c.errorForeground else c.iconMuted, 15.dp)
-            Spacer(Modifier.width(10.dp))
-            Txt(row.title, CandyType.small, c.foreground, maxLines = 1)
-            if (row.detail != null) {
-                Spacer(Modifier.width(8.dp))
-                Txt(row.detail!!, CandyType.monoSmall, c.mutedForeground, maxLines = 1, modifier = Modifier.weight(1f))
-            } else {
-                Spacer(Modifier.weight(1f))
-            }
-            if (row.running) Txt("running", CandyType.meta, c.infoForeground, modifier = Modifier.padding(start = 6.dp))
-            Icon(if (open) Icons.ChevronDown else Icons.ChevronRight, c.mutedForeground, 14.dp, Modifier.padding(start = 4.dp))
-        }
-        if (open) ToolDetail(row, host)
-    }
+    WorkLogLine(
+        toolIcon(row.type), row.title, row.detail,
+        iconTint = if (row.failed) c.toolErrorIcon else null,
+        trailing = if (row.running) ({ Txt("Running", CandyType.xs, c.statusWorking) }) else null,
+        onClick = { host.toggle(row.id) }, open = open,
+        state = if (row.failed) "Failed" else if (row.running) "Running" else "Done",
+    ) { ToolDetail(row, host) }
 }
 
 @Composable
@@ -241,18 +339,18 @@ private fun ToolDetail(row: TurnRow, host: TimelineHost) {
             host.details[row.id + ":" + row.status] = host.load(row.id)
         }
     }
-    Column(Modifier.padding(start = 25.dp, top = 2.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val summary = row.body ?: row.detail
         when {
             detail?.diff != null -> InlineDiff(detail.diff!!)
             detail?.text != null -> CodeBox(detail.text!!)
             summary != null -> CodeBox(summary)
         }
-        if (fetchable && detail == null) Txt("Loading output", CandyType.meta, c.mutedForeground)
+        if (fetchable && detail == null) Txt("Loading output", CandyType.xs, c.mutedForeground)
     }
 }
 
-/** Monospace text that scrolls sideways instead of wrapping, capped in height by its line count. */
+/** Monospace output on the code surface that scrolls sideways instead of wrapping, capped by line count. */
 @Composable
 fun CodeBox(text: String, maxLines: Int = 40) {
     val c = Candy.colors
@@ -260,9 +358,10 @@ fun CodeBox(text: String, maxLines: Int = 40) {
         val lines = text.lines()
         if (lines.size <= maxLines) text else lines.take(maxLines).joinToString("\n") + "\n… ${lines.size - maxLines} more lines"
     }
+    val shape = RoundedCornerShape(Radius.lg)
     Box(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(c.codeBackground).border(1.dp, c.border, RoundedCornerShape(Radius.md))
-            .horizontalScroll(rememberScrollState()).padding(10.dp),
+        Modifier.fillMaxWidth().clip(shape).background(c.codeBackground).border(1.dp, c.border, shape)
+            .horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         SelectionContainer { Txt(shown, CandyType.monoSmall, c.foreground) }
     }
@@ -272,52 +371,29 @@ fun CodeBox(text: String, maxLines: Int = 40) {
 @Composable
 fun InlineDiff(lines: List<DiffLine>, maxLines: Int = 120) {
     val c = Candy.colors
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(Radius.md)).background(c.codeBackground).border(1.dp, c.border, RoundedCornerShape(Radius.md))
-            .padding(vertical = 6.dp),
-    ) {
+    val shape = RoundedCornerShape(Radius.lg)
+    Column(Modifier.fillMaxWidth().clip(shape).background(c.codeBackground).border(1.dp, c.border, shape).padding(vertical = 4.dp)) {
         for (line in lines.take(maxLines)) DiffLineView(line, wrap = true)
-        if (lines.size > maxLines) Txt("${lines.size - maxLines} more lines in the run's diff", CandyType.meta, c.mutedForeground, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+        if (lines.size > maxLines) Txt("${lines.size - maxLines} more lines in the run's diff", CandyType.xs, c.mutedForeground, modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
     }
 }
 
-@Composable
-private fun Collapsible(icon: ImageVector, label: String, open: Boolean, toggle: () -> Unit, content: @Composable () -> Unit) {
-    val c = Candy.colors
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 36.dp).clip(RoundedCornerShape(Radius.md))
-                .clickable(role = Role.Button, onClickLabel = if (open) "Collapse" else "Expand", onClick = toggle).padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, c.iconMuted, 15.dp)
-            Spacer(Modifier.width(10.dp))
-            Txt(label, CandyType.small, c.mutedForeground, modifier = Modifier.weight(1f))
-            Icon(if (open) Icons.ChevronDown else Icons.ChevronRight, c.mutedForeground, 14.dp)
-        }
-        if (open) Box(Modifier.padding(start = 25.dp, top = 2.dp, bottom = 6.dp)) { content() }
-    }
-}
-
-/** Two or more tool calls in a row, folded into one line that names what they did. */
+/**
+ * Two or more tool calls in a row, folded behind one line that names what they did, the way T3
+ * folds a finished turn's work behind "Worked for".
+ */
 @Composable
 fun ToolGroupView(group: ToolGroup, host: TimelineHost) {
     val c = Candy.colors
     val open = host.isOpen(group.key)
     val summary = remember(group) { groupSummary(group) }
     Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 36.dp).clip(RoundedCornerShape(Radius.md))
-                .clickable(role = Role.Button, onClickLabel = if (open) "Collapse" else "Expand") { host.toggle(group.key) }.padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Wrench, if (group.failed > 0) c.errorForeground else c.iconMuted, 15.dp)
-            Spacer(Modifier.width(10.dp))
-            Txt(summary, CandyType.small, c.mutedForeground, maxLines = 2, modifier = Modifier.weight(1f))
-            if (group.running) Txt("running", CandyType.meta, c.infoForeground, modifier = Modifier.padding(start = 6.dp))
-            Icon(if (open) Icons.ChevronDown else Icons.ChevronRight, c.mutedForeground, 14.dp, Modifier.padding(start = 4.dp))
-        }
-        if (open) Column(Modifier.padding(start = 12.dp)) { for (r in group.rows) ToolLine(r.row, host) }
+        WorkLogLine(
+            Icons.Wrench, summary, iconTint = if (group.failed > 0) c.toolErrorIcon else null,
+            trailing = if (group.running) ({ Txt("Running", CandyType.xs, c.statusWorking) }) else null,
+            onClick = { host.toggle(group.key) }, open = open,
+        )
+        if (open) Column { for (r in group.rows) ToolLine(r.row, host) }
     }
 }
 
@@ -339,33 +415,36 @@ private fun groupSummary(group: ToolGroup): String {
     return if (group.failed > 0) "$text · ${group.failed} failed" else text
 }
 
-/** The row under the newest message while a run is active. Static text; the minute clock moves it. */
+/**
+ * The line under the newest message while a run is active: T3's "Working for 4s" over a hairline.
+ * Static text; the minute clock moves it.
+ */
 @Composable
 fun WorkingRow(since: Long, now: Long, queued: Int) {
     val c = Candy.colors
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        StatusDot(c.infoForeground, size = 6.dp)
-        Spacer(Modifier.width(10.dp))
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
         val time = if (since > 0) " for ${duration(now - since)}" else ""
-        Txt("Working$time" + if (queued > 0) " · $queued queued" else "", CandyType.small, c.mutedForeground)
+        Txt("Working$time" + if (queued > 0) " · $queued queued" else "", CandyType.sm.merge(TextStyle(fontFeatureSettings = "tnum")), c.mutedForeground, modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(c.border.copy(alpha = c.border.alpha * 0.6f)))
     }
 }
 
+/** One diff line on pierre's colours: a tinted row, the +/- gutter mark, the text in mono. */
 @Composable
 fun DiffLineView(line: DiffLine, wrap: Boolean, numbers: Boolean = false) {
     val c = Candy.colors
     val (bg, fg, mark) = when (line.kind) {
-        org.anikodev.candywrapper.core.diff.LineKind.ADDED -> Triple(c.diffAdditionSurface, c.foreground, "+")
-        org.anikodev.candywrapper.core.diff.LineKind.REMOVED -> Triple(c.diffDeletionSurface, c.foreground, "-")
-        org.anikodev.candywrapper.core.diff.LineKind.HUNK -> Triple(c.infoSurface, c.mutedForeground, "@@")
-        org.anikodev.candywrapper.core.diff.LineKind.NOTE -> Triple(Color.Transparent, c.mutedForeground, "\\")
-        org.anikodev.candywrapper.core.diff.LineKind.CONTEXT -> Triple(Color.Transparent, c.foreground, " ")
+        LineKind.ADDED -> Triple(c.diffAdditionSurface, c.foreground, "+")
+        LineKind.REMOVED -> Triple(c.diffDeletionSurface, c.foreground, "-")
+        LineKind.HUNK -> Triple(c.infoSurface, c.mutedForeground, "@@")
+        LineKind.NOTE -> Triple(Color.Transparent, c.mutedForeground, "\\")
+        LineKind.CONTEXT -> Triple(Color.Transparent, c.foreground, " ")
     }
     val markColor = when (mark) { "+" -> c.diffAdditionForeground; "-" -> c.diffDeletionForeground; else -> c.mutedForeground }
     Row(Modifier.fillMaxWidth().background(bg).padding(horizontal = 8.dp, vertical = 1.dp)) {
         if (numbers) {
-            Txt(if (line.oldLine > 0) line.oldLine.toString() else "", CandyType.monoSmall, c.mutedForeground, align = TextAlign.End, modifier = Modifier.width(34.dp))
-            Txt(if (line.newLine > 0) line.newLine.toString() else "", CandyType.monoSmall, c.mutedForeground, align = TextAlign.End, modifier = Modifier.width(34.dp))
+            Txt(if (line.oldLine > 0) line.oldLine.toString() else "", CandyType.monoSmall, c.mutedForeground.copy(alpha = 0.7f), align = TextAlign.End, modifier = Modifier.width(34.dp))
+            Txt(if (line.newLine > 0) line.newLine.toString() else "", CandyType.monoSmall, c.mutedForeground.copy(alpha = 0.7f), align = TextAlign.End, modifier = Modifier.width(34.dp))
             Spacer(Modifier.width(8.dp))
         }
         Txt(mark.take(1), CandyType.monoSmall, markColor, modifier = Modifier.width(12.dp))
