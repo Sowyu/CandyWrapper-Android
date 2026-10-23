@@ -1,0 +1,10 @@
+# Ahead-of-time compile the app, the core module and the libraries on the start and sync paths.
+# Compose ships its own profile. profileinstaller applies these to sideloaded APKs too.
+HSPLorg/anikodev/candywrapper/**->**(**)**
+Lorg/anikodev/candywrapper/**;
+HSPLkotlinx/serialization/json/**->**(**)**
+Lkotlinx/serialization/json/**;
+HSPLkotlinx/coroutines/**->**(**)**
+HSPLokhttp3/**->**(**)**
+Lokhttp3/**;
+HSPLokio/**->**(**)**

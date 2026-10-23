@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A wrapped candy: a round sweet with a twisted wrapper end on each side. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M30,54 L18,42 L18,66 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M78,54 L90,42 L90,66 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,54m-20,0a20,20 0,1 1,40 0a20,20 0,1 1,-40 0" />
+    <path android:fillColor="#FF1B4ED8" android:pathData="M46,40 Q54,54 46,68 L50,68 Q58,54 50,40 Z" />
+    <path android:fillColor="#FF1B4ED8" android:pathData="M58,40 Q66,54 58,68 L62,68 Q70,54 62,40 Z" />
+</vector>
