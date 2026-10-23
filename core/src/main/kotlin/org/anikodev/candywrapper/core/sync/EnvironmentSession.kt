@@ -71,6 +71,17 @@ sealed interface ConnectionState {
     data class Blocked(val message: String, val reason: BlockReason) : ConnectionState
 }
 
+/**
+ * The Orchestrator's copy of one computer's shell: every active thread with the fields the relay reads, and the
+ * projects. [generation] starts over on every snapshot and socket, [live] after the server's `synchronized` marker.
+ */
+data class OrchestratorShell(
+    val generation: Long,
+    val live: Boolean,
+    val threads: List<org.anikodev.candywrapper.core.orchestrator.OrchThread>,
+    val projects: List<org.anikodev.candywrapper.core.model.ProjectSummary>,
+)
+
 @Serializable
 private data class StoredTicket(val ticket: String, val expiresAtMs: Long, val usableUntilMs: Long)
 
@@ -114,6 +125,11 @@ class EnvironmentSession(
     private val _server = MutableStateFlow(ServerInfo())
     /** Providers, models and new-thread defaults from the last `server.getConfig`. */
     val server: StateFlow<ServerInfo> = _server
+
+    private val _orchestrator = MutableStateFlow<OrchestratorShell?>(null)
+    /** Null unless [trackOrchestrator] is on and a full snapshot arrived on this process. */
+    val orchestratorShell: StateFlow<OrchestratorShell?> = _orchestrator
+    @Volatile private var shellSubscription: RpcConnection.Subscription? = null
 
     private val wakeSignal = Channel<Unit>(Channel.CONFLATED)
     @Volatile private var connection: RpcConnection? = null
@@ -164,6 +180,27 @@ class EnvironmentSession(
             }
         }
     }
+
+    /**
+     * Keeps [orchestratorShell] while the Orchestrator is on. The cache stores no relay fields, so turning it on
+     * subscribes the shell once more without the cursor for a full snapshot; off drops everything.
+     */
+    fun trackOrchestrator(on: Boolean) {
+        val resubscribe = synchronized(shellLock) {
+            if (shell.trackRaw == on) return
+            shell.trackRaw = on
+            if (!on) _orchestrator.value = null
+            on
+        }
+        if (resubscribe) liveConnection()?.let { conn ->
+            shellSubscription?.cancel()
+            subscribeShell(conn)
+        }
+    }
+
+    /** A server stream on the open socket, or null while offline. [handler] runs on the reader thread. */
+    fun subscribe(tag: String, payload: JsonObject, onEnd: (Throwable?) -> Unit, handler: RpcConnection.StreamHandler): RpcConnection.Subscription? =
+        liveConnection()?.subscribe(tag, payload, onEnd, handler)
 
     /** The socket if it is open, for thread sessions that start after it did. */
     fun liveConnection(): RpcConnection? = connection?.takeUnless { it.isClosed }
@@ -390,6 +427,7 @@ class EnvironmentSession(
         val connectMs = System.currentTimeMillis() - startedAtMs
         _state.value = ConnectionState.Live(r.label, connectMs)
         Timeline.mark("$trace.socket.open", "${r.label}, $connectMs ms")
+        synchronized(shellLock) { if (shell.trackRaw) shell.newGeneration() }
         subscribeShell(conn)
         synchronized(threadSessions) { threadSessions.values.toList() }.forEach { it.attach(conn) }
         val config = conn.call("server.getConfig")
@@ -405,13 +443,14 @@ class EnvironmentSession(
         val payload = buildJsonObject {
             synchronized(shellLock) {
                 shell.resetLive()
-                if (shell.hasCursor) put("afterSequence", shell.sequence)
+                // The Orchestrator needs every thread's relay fields once, which only a snapshot carries.
+                if (shell.hasCursor && !(shell.trackRaw && !shell.rawComplete)) put("afterSequence", shell.sequence)
             }
             put("requestCompletionMarker", true)
         }
         val start = Timeline.nowMs()
         var first = true
-        conn.subscribe("orchestration.subscribeShell", payload, onEnd = { error ->
+        shellSubscription = conn.subscribe("orchestration.subscribeShell", payload, onEnd = { error ->
             // The server ends the stream when its live buffer overflows; resume from the cursor. If it
             // keeps failing, drop the socket and let the backoff reconnect.
             if (error != null && !conn.isClosed) {
@@ -437,6 +476,9 @@ class EnvironmentSession(
                 changed = shell.apply(o) || changed
             }
             if (changed) _threads.value = shell.model()
+            if (shell.takeRawChange() && shell.rawComplete) {
+                _orchestrator.value = OrchestratorShell(shell.generation, shell.live, shell.raw.values.toList(), shell.projects())
+            }
         }
         if (live) {
             Timeline.span("$trace.shell.live", subscribedAt, "${_threads.value.threadCount} threads")

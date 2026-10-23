@@ -55,6 +55,8 @@ data class TurnRow(
     val attachments: List<ChatAttachment> = emptyList(),
     /** The image a tool looked at (`dynamic_tool.viewedImagePath`), shown under its line. */
     val viewedImagePath: String? = null,
+    /** A page T3's `html_render` published. */
+    val htmlPage: HtmlPage? = null,
 ) {
     val kind: RowKind
         get() = when (type) {
@@ -163,6 +165,7 @@ data class TurnRow(
                 atMs = ThreadSummary.time(o.str("completedAt") ?: o.str("updatedAt") ?: o.str("startedAt")),
                 attachments = ChatAttachment.list(o),
                 viewedImagePath = o.str("viewedImagePath"),
+                htmlPage = if (type == "dynamic_tool") HtmlPage.fromItem(o) else null,
             )
         }
 

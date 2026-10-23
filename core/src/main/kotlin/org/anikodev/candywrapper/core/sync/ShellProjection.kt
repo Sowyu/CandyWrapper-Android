@@ -10,6 +10,7 @@ import org.anikodev.candywrapper.core.media.ProjectIcons
 import org.anikodev.candywrapper.core.model.ProjectSummary
 import org.anikodev.candywrapper.core.model.ThreadListModel
 import org.anikodev.candywrapper.core.model.ThreadSummary
+import org.anikodev.candywrapper.core.orchestrator.OrchThread
 import org.anikodev.candywrapper.core.store.CachedShell
 import org.anikodev.candywrapper.core.store.ShellWrite
 
@@ -24,6 +25,30 @@ class ShellProjection(cached: CachedShell? = null, private val envId: String = "
         private set
     private val projects = LinkedHashMap<String, ProjectSummary>()
     private val threads = HashMap<String, ThreadSummary>()
+
+    /**
+     * The Orchestrator's view of every active thread, subagents included, only while [trackRaw] is on. The cache
+     * keeps none of it, so it is complete only after a full snapshot on this process ([rawComplete]).
+     */
+    var trackRaw = false
+        set(value) {
+            field = value
+            if (!value) { raw.clear(); rawComplete = false }
+        }
+    val raw = HashMap<String, OrchThread>()
+    var rawComplete = false
+        private set
+    /** Set when [raw] changed since [takeRawChange]. */
+    private var rawChanged = false
+    /** Bumps on every snapshot and new socket: the relay's baseline starts over (CandyWrapper's per-session baseline). */
+    var generation = 0L
+        private set
+
+    fun newGeneration() { generation++; rawChanged = true }
+
+    fun takeRawChange(): Boolean = rawChanged.also { rawChanged = false }
+
+    fun projects(): List<ProjectSummary> = projects.values.toList()
 
     private var replaced = false
     private val dirtyProjects = HashSet<String>()
@@ -56,12 +81,19 @@ class ShellProjection(cached: CachedShell? = null, private val envId: String = "
                 snap.arr("projects")?.forEach { (it as? JsonObject)?.let { p -> project(p, envId) }?.let { p -> projects[p.id] = p } }
                 snap.arr("threads")?.forEach { (it as? JsonObject)?.let { t -> ThreadSummary.fromShell(t, nowMs, envId = envId) }?.let { t -> threads[t.id] = t } }
                 sequence = snap.long("snapshotSequence") ?: 0
+                if (trackRaw) {
+                    raw.clear()
+                    snap.arr("threads")?.forEach { (it as? JsonObject)?.let { t -> OrchThread.from(t, envId) }?.let { t -> raw[t.id] = t } }
+                    rawComplete = true
+                    newGeneration()
+                }
                 replaced = true
                 dirtyProjects.clear(); removedProjects.clear(); dirtyThreads.clear(); removedThreads.clear()
                 return true
             }
             "synchronized" -> {
                 live = true
+                if (trackRaw) rawChanged = true
                 return false
             }
         }
@@ -84,6 +116,10 @@ class ShellProjection(cached: CachedShell? = null, private val envId: String = "
             "thread.updated" -> {
                 val o = item.obj("thread") ?: return false
                 val id = o.str("id") ?: return false
+                if (trackRaw) {
+                    val t = if (item.str("location") == "active" || item.str("location") == null) OrchThread.from(o, envId) else null
+                    if (t == null) { if (raw.remove(id) != null) rawChanged = true } else if (raw.put(id, t) != t) rawChanged = true
+                }
                 val summary = if (item.str("location") == "active" || item.str("location") == null) ThreadSummary.fromShell(o, nowMs, envId = envId) else null
                 if (summary == null) removeThread(id) else {
                     if (threads[id] == summary) return false
@@ -93,7 +129,10 @@ class ShellProjection(cached: CachedShell? = null, private val envId: String = "
                     true
                 }
             }
-            "thread.removed" -> item.str("threadId")?.let(::removeThread) ?: false
+            "thread.removed" -> item.str("threadId")?.let { id ->
+                if (trackRaw && raw.remove(id) != null) rawChanged = true
+                removeThread(id)
+            } ?: false
             // Unknown kinds still advance the cursor; they are skipped either way.
             else -> false
         }
