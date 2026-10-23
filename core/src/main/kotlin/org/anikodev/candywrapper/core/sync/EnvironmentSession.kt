@@ -271,6 +271,10 @@ class EnvironmentSession(
         return UploadedAttachment(id, name, mimeType, bytes.size.toLong())
     }
 
+    /** An environment-relative path (a signed asset URL) against the route the socket uses. */
+    fun resolve(relative: String): HttpUrl =
+        (route?.httpBase ?: _env.value.httpBase).toHttpUrl().resolve(relative) ?: throw IOException("Bad address.")
+
     /** Signed asset URLs for this computer's images (`assets.createUrl`, protocol.md 9.7), reused until near expiry. */
     val assetUrls = AssetUrls { resource ->
         val result = request("assets.createUrl", buildJsonObject { put("resource", resource) }) as? JsonObject

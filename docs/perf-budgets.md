@@ -68,6 +68,15 @@ Redesign (Experimental):
 - Estimate for a phone (Pixel 7 class, 2.625x) scrolling a thread with Stash, the queue, the composer, the machine row, Waiting and the header pill: six offscreen buffers of about 95,000 pixels in all, under 4% of the screen, each blurred with a radius of about 8 buffer pixels, plus six display lists of a few operations re-recorded on the main thread. That is an estimated 0.5 to 1 ms of render-thread and GPU time per scrolling frame against 8.3 ms at 120 Hz; not measured on a device yet.
 - The dot grids and the rolling digits move only on the shared second ticker.
 
+Orchestrator (Experimental, Redesign only):
+
+- Off, it costs nothing: no shell keeps relay fields, no flow is collected and no view exists.
+- On, each machine's shell keeps one small `OrchThread` per active thread beside the sidebar row, decoded from the same `thread.updated` JSON. The cache stores none of it, so a cold start with the toggle on asks the shell for a full snapshot instead of resuming from the cursor: one snapshot per machine per process, about 7 ms of decoding for 300 threads on a desktop JVM.
+- The controller decides on server pushes and on the activity's start and stop only. The one timer is the event batch's one-shot 30-second flush, armed by the first event of a window. The task list is a server stream on the home machine while the app is in front, closed in the background.
+- A finished Orchestrator turn costs one `orchestration.getThreadProjection`, only while this phone relays, 2 s after the turn ends.
+- The pane builds its chat on `Dispatchers.Default` from the thread's rows; a reply's Markdown is parsed again only when its text changed.
+- Bots draw cached polygons. A shape's first pose works out its turn limits on `Dispatchers.Default` (the 315-pose sweep of all 14 shapes takes about 2 s on a desktop JVM, so one shape's limits take a fraction of that), then every redraw reuses the cache. A mood change plays one flourish under a second; nothing animates while idle.
+
 ## Measured on the JVM
 
 From `PerfTest`, a desktop JVM, warm, median of 30 runs. A mid-range phone is roughly 3 to 5 times slower.

@@ -93,6 +93,13 @@ class AppGraph(private val app: Application) {
     /** Redesign's sidebar sections the user folded, project group keys joined by newlines. */
     val redesignFolded = UiValue(REDESIGN_FOLDED)
 
+    /** Settings > Orchestrator, stored in the app's files (data/OrchestratorStore). Read on the boot thread. */
+    val orchestratorStore = org.anikodev.candywrapper.data.OrchestratorStore(app.filesDir, scope)
+    /** Exists for the life of the process; does nothing while the toggle or Redesign is off. */
+    val orchestrator by lazy { org.anikodev.candywrapper.orchestrator.OrchestratorController(this) }
+    /** The Orchestrator composer's draft, kept like a thread's while you leave the pane and across a relaunch. */
+    val orchestratorDraft = UiValue(ORCHESTRATOR_DRAFT)
+
     /** Redesign's dithered art, rendered once per picture, size and appearance and cached on disk. */
     val ditherArt by lazy { DitherArtStore(app.filesDir, app.cacheDir) }
 
@@ -143,7 +150,8 @@ class AppGraph(private val app: Application) {
         lastThreadId = db.uiValue(LAST_THREAD)
         _theme.value = db.uiValue(THEME)?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: ThemeChoice.SYSTEM
         for (s in listOf(legacySidebar, planMode, settledShelf, snoozedShelf, workingSection, workingShelf, redesign)) s.load()
-        for (v in listOf(machineScope, projectScope, redesignAccent, redesignPicture, redesignDim, redesignFolded)) v.load()
+        for (v in listOf(machineScope, projectScope, redesignAccent, redesignPicture, redesignDim, redesignFolded, orchestratorDraft)) v.load()
+        orchestratorStore.load()
         stash.entries
         environments.restore(envs, shells)
         Timeline.span("cache.loaded", start, "${envs.size} environments, ${shells.values.sumOf { it?.threads?.size ?: 0 }} threads")
@@ -157,6 +165,7 @@ class AppGraph(private val app: Application) {
         Http.prefetchDns(scope, envs.flatMap { e -> listOf(e.httpBase) + e.directRoutes.map { it.httpBaseUrl } }.mapNotNull { it.toHttpUrlOrNull()?.host })
         if (envs.any { it.kind == EnvironmentKind.CONNECT }) scope.launch(Dispatchers.IO) { key.thumbprint }
         environments.startAll()
+        orchestrator.start()
         secrets.warm()
         _account.value = clerk.account()
         if (_account.value != null) scope.launch(Dispatchers.IO) { refreshConnect() }
@@ -268,5 +277,6 @@ class AppGraph(private val app: Application) {
         private const val REDESIGN_PICTURE = "redesign_picture"
         private const val REDESIGN_DIM = "redesign_dim"
         private const val REDESIGN_FOLDED = "redesign_folded"
+        private const val ORCHESTRATOR_DRAFT = "orchestrator_draft"
     }
 }
