@@ -88,7 +88,7 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
         selected?.let { s ->
             val env = s.env.value
             Sheet({ selected = null }, env.label) {
-                ListRow("Open threads", icon = Icons.ChevronRight) { selected = null; nav.reset(Screen.Home(s.id)) }
+                ListRow("Open threads", icon = Icons.ChevronRight) { selected = null; nav.reset(Screen.Main(s.id, null)) }
                 ListRow("Reconnect now", icon = Icons.RefreshCw) { selected = null; s.wake(); s.networkChanged() }
                 if (confirmRemove) {
                     Txt(
@@ -104,7 +104,7 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                         CButton("Keep", kind = ButtonKind.GHOST) { confirmRemove = false }
                     }
                 } else {
-                    ListRow("Remove from this phone", icon = Icons.Trash2, labelColor = c.error) { confirmRemove = true }
+                    ListRow("Remove from this phone", icon = Icons.Trash2, labelColor = c.errorForeground) { confirmRemove = true }
                 }
             }
         }

@@ -191,9 +191,11 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(BottomInsets)) {
+            val shell = LocalShell.current
             TopBar(
-                state.title ?: summary?.title ?: "Thread", onBack = { nav.pop() }, subtitle = subtitle,
-                subtitleColor = if (!live && state.items.isEmpty()) c.error else c.mutedForeground,
+                state.title ?: summary?.title ?: "Thread", subtitle = subtitle,
+                leading = if (!shell.wide) ({ IconButton(Icons.PanelLeft, "Open the sidebar", tint = c.foreground, onClick = shell.openSidebar) }) else null,
+                subtitleColor = if (!live && state.items.isEmpty()) c.errorForeground else c.mutedForeground,
                 onTitleClick = { sheet = ThreadSheet.Actions },
             ) {
                 IconButton(Icons.Ellipsis, "Thread actions") { sheet = ThreadSheet.Actions }
@@ -258,12 +260,12 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                 if (summary?.unread == false && summary.pill == StatusPill.READY) {
                     ListRow("Mark as unread", icon = Icons.Eye, enabled = live) {
                         sheet = null
-                        act(null) { session.dispatch(Commands.markUnread(threadId)); nav.pop() }
+                        act(null) { session.dispatch(Commands.markUnread(threadId)); nav.reset(Screen.Main(envId, null)) }
                     }
                 }
                 ListRow("Archive", icon = Icons.Archive, enabled = live) {
                     sheet = null
-                    act(null) { session.dispatch(Commands.archive(threadId)); nav.pop() }
+                    act(null) { session.dispatch(Commands.archive(threadId)); nav.reset(Screen.Main(envId, null)) }
                 }
             }
             ThreadSheet.Rename -> RenameSheet(state.title ?: summary?.title.orEmpty(), onDismiss = { sheet = null }) { title ->
@@ -427,7 +429,7 @@ fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: S
                             session.dispatch(Commands.sendMessage(threadId, text, uploaded,
                                 titleSeed = text.lineSequence().firstOrNull { it.isNotBlank() }?.take(80)))
                             Timeline.mark("thread.created", threadId.take(8))
-                            nav.replaceTop(Screen.Thread(envId, threadId))
+                            nav.reset(Screen.Main(envId, threadId))
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {

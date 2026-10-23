@@ -59,6 +59,10 @@ class AppGraph(private val app: Application) {
     @Volatile var lastEnvironmentId: String? = null
         private set
 
+    /** The thread open last in [lastEnvironmentId], reopened with the sidebar closed on a cold start. */
+    @Volatile var lastThreadId: String? = null
+        private set
+
     private val _theme = MutableStateFlow(ThemeChoice.SYSTEM)
     /** Light, dark or follow the system; stored with the UI state. */
     val theme: StateFlow<ThemeChoice> = _theme
@@ -78,9 +82,13 @@ class AppGraph(private val app: Application) {
         val envs = db.environments()
         val shells = envs.associate { it.id to db.shell(it.id) }
         lastEnvironmentId = db.uiValue(LAST_ENV)
+        lastThreadId = db.uiValue(LAST_THREAD)
         _theme.value = db.uiValue(THEME)?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: ThemeChoice.SYSTEM
         environments.restore(envs, shells)
         Timeline.span("cache.loaded", start, "${envs.size} environments, ${shells.values.sumOf { it?.threads?.size ?: 0 }} threads")
+        // The first frame shows the last thread, so its rows are read here, while the activity is created.
+        val reopen = lastThreadId?.let { t -> lastEnvironmentId?.let(environments::session)?.thread(t) }
+        if (reopen != null) Timeline.timed("cache.thread.preloaded") { reopen.preload() }
         _readyFlow.value = true
         ready.countDown()
 
@@ -99,6 +107,16 @@ class AppGraph(private val app: Application) {
     fun rememberEnvironment(id: String?) {
         lastEnvironmentId = id
         scope.launch(Dispatchers.IO) { db.setUiValue(LAST_ENV, id) }
+    }
+
+    fun rememberThread(envId: String, threadId: String?) {
+        if (lastEnvironmentId == envId && lastThreadId == threadId) return
+        lastEnvironmentId = envId
+        lastThreadId = threadId
+        scope.launch(Dispatchers.IO) {
+            db.setUiValue(LAST_ENV, envId)
+            db.setUiValue(LAST_THREAD, threadId)
+        }
     }
 
     fun setTheme(choice: ThemeChoice) {
@@ -137,5 +155,6 @@ class AppGraph(private val app: Application) {
     private companion object {
         const val LAST_ENV = "last_env"
         const val THEME = "theme"
+        const val LAST_THREAD = "last_thread"
     }
 }

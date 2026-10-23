@@ -115,7 +115,7 @@ private fun SignIn(graph: AppGraph) {
             CButton("Back", kind = ButtonKind.GHOST) { challenge = null; code = "" }
         }
     }
-    error?.let { Notice(it, c.error, c.errorSurface) }
+    error?.let { Notice(it, c.errorForeground, c.errorSurface) }
 }
 
 @Composable
@@ -133,7 +133,7 @@ private fun Account(graph: AppGraph, nav: Navigator) {
     if (linked.isNotEmpty()) Card {
         for ((i, s) in linked.withIndex()) {
             if (i > 0) Divider()
-            ListRow(s.env.value.label, icon = Icons.Laptop) { nav.reset(Screen.Home(s.id)) }
+            ListRow(s.env.value.label, icon = Icons.Laptop) { nav.reset(Screen.Main(s.id, null)) }
         }
     }
     Row(horizontalArrangement = ButtonRow) {

@@ -50,7 +50,7 @@ fun PairScreen(graph: AppGraph, nav: Navigator, prefill: String?) {
                         try {
                             val session = graph.environments.pair(link, code.ifBlank { null })
                             graph.rememberEnvironment(session.id)
-                            nav.reset(Screen.Home(session.id))
+                            nav.reset(Screen.Main(session.id, null))
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -62,7 +62,7 @@ fun PairScreen(graph: AppGraph, nav: Navigator, prefill: String?) {
                 })
                 CButton("Paste", icon = Icons.Copy) { clipboard.getText()?.text?.let { link = it.trim() } }
             }
-            error?.let { Notice(it, c.error, c.errorSurface) }
+            error?.let { Notice(it, c.errorForeground, c.errorSurface) }
         }
     }
 }
