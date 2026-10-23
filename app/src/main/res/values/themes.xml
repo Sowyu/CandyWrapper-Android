@@ -1,6 +1,6 @@
 <resources>
     <color name="window_background">#FFFCFCFC</color>
-    <color name="icon_background">#FF1B4ED8</color>
+    <color name="icon_background">#FFF0F0F0</color>
     <!-- The window draws the theme background before Compose's first frame, so there is no white flash. -->
     <style name="Theme.CandyWrapper" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/window_background</item>
