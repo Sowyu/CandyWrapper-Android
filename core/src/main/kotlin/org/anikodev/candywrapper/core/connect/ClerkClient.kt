@@ -98,7 +98,7 @@ class ClerkClient(
     suspend fun startEmailCode(email: String): ClerkCodeChallenge {
         val owner = newAttempt()
         beginSignIn(owner) { it.emailCode }
-        val (signIn, _) = call("POST", "/v1/client/sign_ins", mapOf("identifier" to email.trim(), "locale" to locale), owner).signIn()
+        val (signIn, _) = createSignIn(mapOf("identifier" to email.trim(), "locale" to locale), owner)
         val factor = emailFactor(signIn, "supported_first_factors", fallbackToFirst = true)
             ?: throw ClerkError(null, "This account can't sign in with an email code.")
         val challenge = ClerkCodeChallenge(signIn.str("id")!!, false, factor.str("email_address_id"), factor.str("safe_identifier"), owner)
@@ -127,8 +127,7 @@ class ClerkClient(
     suspend fun signIn(email: String, password: String): ClerkSignInStep {
         val owner = newAttempt()
         beginSignIn(owner) { it.password }
-        val (signIn, client) = call("POST", "/v1/client/sign_ins",
-            mapOf("identifier" to email.trim(), "locale" to locale, "password" to password), owner).signIn()
+        val (signIn, client) = createSignIn(mapOf("identifier" to email.trim(), "locale" to locale, "password" to password), owner)
         if (signIn.str("status") == "needs_first_factor") {
             val (next, nextClient) = call("POST", "/v1/client/sign_ins/${seg(signIn.str("id")!!)}/attempt_first_factor",
                 mapOf("password" to password, "strategy" to "password"), owner).signIn()
@@ -223,6 +222,19 @@ class ClerkClient(
         // single_session_mode refuses a second sign-in on a client that has one (`session_exists`).
         if (auth.bool("single_session_mode") == true && session()?.sessionId != null) signOut()
         own(owner)
+    }
+
+    /**
+     * `POST /v1/client/sign_ins`. If Clerk says this client is already signed in, end its sessions
+     * (`DELETE /v1/client/sessions`) and try once more, as clerk-ios does.
+     */
+    private suspend fun createSignIn(fields: Map<String, String>, owner: Int): Pair<JsonObject, JsonObject?> = try {
+        call("POST", "/v1/client/sign_ins", fields, owner).signIn()
+    } catch (e: ClerkError) {
+        if (e.code != "session_exists" && e.code != "identifier_already_signed_in") throw e
+        call("DELETE", "/v1/client/sessions", owner = owner)
+        session()?.let { persist(it.copy(sessionId = null, userId = null, identifier = null)) }
+        call("POST", "/v1/client/sign_ins", fields, owner).signIn()
     }
 
     private suspend fun advance(signIn: JsonObject, client: JsonObject?, owner: Int): ClerkSignInStep {
