@@ -14,7 +14,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import kotlin.math.abs
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -113,6 +119,7 @@ private fun PhoneShell(drawer: DrawerState, windowWidth: Dp, sidebar: @Composabl
     val panelWidth = minOf(windowWidth - 56.dp, 360.dp)
     val widthPx = with(LocalDensity.current) { panelWidth.toPx() }
     val exclusionHalf = with(LocalDensity.current) { 100.dp.toPx() }
+    val edgePx = with(LocalDensity.current) { 24.dp.toPx() }
     val drag = rememberDraggableState { delta -> scope.launch { drawer.dragBy(delta, widthPx) } }
     val showing by remember { derivedStateOf { drawer.visible } }
     var warm by remember { mutableStateOf(drawer.isOpen) }
@@ -124,17 +131,18 @@ private fun PhoneShell(drawer: DrawerState, windowWidth: Dp, sidebar: @Composabl
 
     CompositionProvidesShell(remember(drawer) { ShellControls(wide = false) { scope.launch { drawer.open() } } }) {
         Box(Modifier.fillMaxSize()) {
-            content()
-            // A swipe from the left edge opens the sidebar. On gesture navigation the system keeps
-            // the edge for Back, except for the middle 200dp handed to the app here.
+            // A swipe from the left edge opens the sidebar. The detector watches the content's
+            // touches before it does and claims one only once it is a rightward drag from the edge,
+            // so taps near the edge still reach the content.
+            Box(Modifier.fillMaxSize().edgeSwipe(edgePx, widthPx, drawer, scope)) { content() }
+            // On gesture navigation the system keeps the edge for Back, except the middle 200dp handed to the app here.
             if (!showing) {
                 Box(
                     Modifier.align(Alignment.CenterStart).width(20.dp).fillMaxHeight()
                         .systemGestureExclusion { coords ->
                             val mid = coords.size.height / 2f
                             Rect(0f, mid - exclusionHalf, coords.size.width.toFloat(), mid + exclusionHalf)
-                        }
-                        .draggable(drag, Orientation.Horizontal, onDragStopped = { v -> drawer.settle(v) }),
+                        },
                 )
             }
             if (showing) {
@@ -172,3 +180,35 @@ private fun PhoneShell(drawer: DrawerState, windowWidth: Dp, sidebar: @Composabl
         }
     }
 }
+
+/**
+ * Opens the drawer with a rightward drag that starts within [edgePx] of the left edge while it is
+ * closed. It stays attached for the whole gesture: the drawer becoming visible mid-drag must not
+ * cancel the drag that is opening it.
+ */
+private fun Modifier.edgeSwipe(edgePx: Float, widthPx: Float, drawer: DrawerState, scope: kotlinx.coroutines.CoroutineScope): Modifier =
+    pointerInput(edgePx, widthPx, drawer) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            if (down.position.x > edgePx || drawer.visible) return@awaitEachGesture
+            val velocity = VelocityTracker().apply { addPosition(down.uptimeMillis, down.position) }
+            var dragging = false
+            while (true) {
+                val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed) break
+                velocity.addPosition(change.uptimeMillis, change.position)
+                val dx = change.position.x - down.position.x
+                val dy = change.position.y - down.position.y
+                if (!dragging) {
+                    if (dx > viewConfiguration.touchSlop && abs(dx) > abs(dy)) dragging = true
+                    else if (abs(dy) > viewConfiguration.touchSlop || dx < -viewConfiguration.touchSlop) break
+                }
+                if (dragging) {
+                    val step = change.position.x - change.previousPosition.x
+                    scope.launch { drawer.dragBy(step, widthPx) }
+                    change.consume()
+                }
+            }
+            if (dragging) scope.launch { drawer.settle(velocity.calculateVelocity().x) }
+        }
+    }
