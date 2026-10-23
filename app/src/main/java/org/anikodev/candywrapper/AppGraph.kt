@@ -68,7 +68,7 @@ class AppGraph(private val app: Application) {
     val stash by lazy { PromptStash(java.io.File(app.filesDir, "prompt-stash")) }
 
     /** The thread's images on disk and in memory (data/ImageStore). */
-    val images by lazy { ImageStore(app.cacheDir) }
+    val images by lazy { ImageStore(app.cacheDir) { app.contentResolver.openInputStream(android.net.Uri.parse(it)) } }
 
     /** Project icons, read back on the boot thread so the first frame has them (data/ProjectIconStore). */
     val projectIcons = ProjectIconStore(app.filesDir, scope) { environments.session(it) }

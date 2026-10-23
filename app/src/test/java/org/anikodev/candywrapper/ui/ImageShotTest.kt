@@ -30,7 +30,7 @@ import org.robolectric.annotation.Config
 @Config(qualifiers = PHONE)
 class ImageShotTest {
     /** Synthetic pictures, drawn at once, sized by their key so boxes show real ratios. */
-    private object FakeImages : ThreadImages {
+    object FakeImages : ThreadImages {
         override val threadId = "t1"
         private fun sizeOf(ref: ImageRef) = when {
             "chart" in ref.key -> IntSize(1600, 900)

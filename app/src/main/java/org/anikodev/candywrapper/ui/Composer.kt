@@ -26,7 +26,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.content.MediaType
+import androidx.compose.foundation.content.consume
+import androidx.compose.foundation.content.contentReceiver
+import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalDensity
+import android.webkit.MimeTypeMap
+import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import org.anikodev.candywrapper.core.media.ImageRef
+import org.anikodev.candywrapper.core.media.Media
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -56,7 +74,11 @@ import org.anikodev.candywrapper.core.model.ServerInfo
 data class ComposerSettings(val model: ModelSelection?, val runtimeMode: String, val interactionMode: String)
 
 /** An image picked for the next message, read when it is sent. */
-data class PickedFile(val uri: Uri, val name: String, val mimeType: String, val sizeBytes: Long)
+data class PickedFile(val uri: Uri, val name: String, val mimeType: String, val sizeBytes: Long) {
+    /** Drawn as a thumbnail pill; anything else keeps the file chip. */
+    val isImage: Boolean get() = Media.isRasterMime(mimeType)
+    val ref: ImageRef.Local get() = ImageRef.Local("local:$uri", name, uri.toString())
+}
 
 /** The composer's menus. */
 enum class Picker { MODEL, OPTIONS, ACCESS, SEND }
@@ -119,6 +141,37 @@ fun describePick(context: Context, uri: Uri): PickedFile? {
     return PickedFile(uri, name, mime, size)
 }
 
+/**
+ * Images pasted or inserted by the keyboard. Each stream opens now, while the clipboard's or the
+ * keyboard's read grant lasts; the bytes are copied into the app's cache on [Dispatchers.IO] and
+ * each image is handed to [add] as soon as its copy is on disk. Anything that is not a picture is
+ * skipped. At most [room] are taken.
+ */
+fun CoroutineScope.receivePasted(context: Context, uris: List<Uri>, room: Int, add: (PickedFile) -> Unit) {
+    val resolver = context.contentResolver
+    val opened = uris.asSequence().mapNotNull { uri ->
+        val mime = resolver.getType(uri)?.takeIf(Media::isRasterMime) ?: return@mapNotNull null
+        val input = runCatching { resolver.openInputStream(uri) }.getOrNull() ?: return@mapNotNull null
+        val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "png"
+        val name = describePick(context, uri)?.name?.takeIf { '.' in it } ?: "Pasted image.$ext"
+        Triple(input, mime, name)
+    }.take(room).toList()
+    if (opened.isEmpty()) return
+    launch {
+        for ((input, mime, name) in opened) {
+            val file = withContext(Dispatchers.IO) {
+                val dir = File(context.cacheDir, "composer-paste").apply { mkdirs() }
+                // ponytail: drafts live in memory, so a day-old paste has no composer left; index them if pastes pile up
+                dir.listFiles()?.filter { it.lastModified() < System.currentTimeMillis() - 86_400_000L }?.forEach { it.delete() }
+                val out = File(dir, "${UUID.randomUUID()}.${name.substringAfterLast('.')}")
+                runCatching { input.use { i -> out.outputStream().use { i.copyTo(it) } } }.getOrNull() ?: return@withContext null
+                out
+            } ?: continue
+            add(PickedFile(Uri.fromFile(file), name, mime, file.length()))
+        }
+    }
+}
+
 suspend fun readPick(context: Context, file: PickedFile): ByteArray = withContext(Dispatchers.IO) {
     context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() } ?: throw java.io.IOException("Could not read ${file.name}.")
 }
@@ -158,9 +211,19 @@ fun Composer(
     initialMenu: Picker? = null,
     trayAbove: Boolean = false,
     onStash: (() -> Unit)? = null,
+    onPaste: ((List<Uri>) -> Unit)? = null,
     footer: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val c = Candy.colors
+    val images = LocalImages.current
+    // The field edits its own state; the screen's draft follows it, and a send, restore or stash sets it back.
+    val field = rememberTextFieldState(text)
+    val sent = remember { arrayOf(text) }
+    val latestOnText by rememberUpdatedState(onText)
+    SideEffect { if (text != sent[0]) { sent[0] = text; field.setTextAndPlaceCursorAtEnd(text) } }
+    LaunchedEffect(field) {
+        snapshotFlow { field.text.toString() }.collect { if (it != sent[0]) { sent[0] = it; latestOnText(it) } }
+    }
     var menu by remember { mutableStateOf(initialMenu) }
     val canSend = connected && busy == null && locked == null && (text.isNotBlank() || files.isNotEmpty())
     val canStash = busy == null && locked == null && (text.isNotBlank() || files.isNotEmpty())
@@ -181,21 +244,38 @@ fun Composer(
                 .clip(shape).let { if (c.redesign) it else it.background(c.card).border(1.dp, c.border, shape) },
         ) {
             if (files.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (f in files) AttachmentChip(f) { onRemoveFile(f) }
+                val refs = remember(files.toList()) { files.filter { it.isImage }.map { it.ref } }
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    for (f in files) {
+                        if (f.isImage) ImagePill(f, onOpen = { images?.open(refs, refs.indexOf(f.ref)) }) { onRemoveFile(f) }
+                        else AttachmentChip(f) { onRemoveFile(f) }
+                    }
                 }
             }
             BasicTextField(
-                text, onText,
+                field,
                 Modifier.fillMaxWidth().heightIn(min = 60.dp, max = 220.dp).padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
-                    .semantics { contentDescription = "Message" },
+                    .semantics { contentDescription = "Message" }
+                    // Clipboard paste and keyboard image insertion: picture URIs go to the screen, text stays in the field.
+                    .let { m ->
+                        if (onPaste == null || locked != null) m else m.contentReceiver { content ->
+                            if (!content.hasMediaType(MediaType.Image)) return@contentReceiver content
+                            val uris = mutableListOf<Uri>()
+                            val rest = content.consume { item -> item.uri?.also { uris += it } != null }
+                            if (uris.isNotEmpty()) onPaste(uris)
+                            rest
+                        }
+                    },
                 enabled = locked == null,
                 textStyle = CandyType.chat.merge(TextStyle(color = c.foreground)),
                 cursorBrush = SolidColor(c.primary),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                decorationBox = { inner ->
+                decorator = { inner ->
                     Box {
-                        if (text.isEmpty()) Txt(
+                        if (field.text.isEmpty()) Txt(
                             when {
                                 locked != null -> locked
                                 !connected -> "Waiting for the computer"
@@ -291,6 +371,38 @@ private fun ControlDivider() {
     Box(Modifier.padding(horizontal = 2.dp).width(1.dp).height(16.dp).background(Candy.colors.border))
 }
 
+/**
+ * An attached image as T3's composer tile (ComposerAttachmentStrip.tsx): `h-16 w-16 rounded-lg border
+ * border-border/80 bg-background` with the picture cropped to fill, decoded off the main thread at
+ * the tile's size, and `media-close`'s dark remove button at the top right. A tap opens the viewer.
+ */
+@Composable
+private fun ImagePill(f: PickedFile, onOpen: () -> Unit, onRemove: () -> Unit) {
+    val c = Candy.colors
+    val shape = RoundedCornerShape(Radius.lg)
+    val px = with(LocalDensity.current) { 64.dp.roundToPx() }
+    Box(Modifier.size(64.dp)) {
+        RemoteImage(
+            f.ref, px,
+            Modifier.matchParentSize().clip(shape).background(c.background).border(1.dp, c.border.copy(alpha = c.border.alpha * 0.8f), shape),
+            crop = true, onClick = onOpen,
+        )
+        // A 32dp target in the corner; the 24dp button inside sits 4dp from the edges, as T3's `right-1 top-1`.
+        Box(
+            Modifier.align(Alignment.TopEnd).size(32.dp)
+                .clickable(role = Role.Button, onClickLabel = "Remove ${f.name}", onClick = onRemove)
+                .semantics { contentDescription = "Remove ${f.name}" },
+            contentAlignment = Alignment.Center,
+        ) {
+            val button = RoundedCornerShape(8.dp)
+            Box(
+                Modifier.size(24.dp).clip(button).background(Color.Black.copy(alpha = 0.65f)).border(1.dp, Color.White.copy(alpha = 0.2f), button),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.X, Color.White, 14.dp) }
+        }
+    }
+}
+
 @Composable
 private fun AttachmentChip(f: PickedFile, onRemove: () -> Unit) {
     val c = Candy.colors
@@ -298,7 +410,7 @@ private fun AttachmentChip(f: PickedFile, onRemove: () -> Unit) {
         Modifier.clip(RoundedCornerShape(Radius.md)).background(c.accent).border(1.dp, c.border, RoundedCornerShape(Radius.md)).padding(start = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Image, c.mutedForeground, 14.dp)
+        Icon(Icons.File, c.mutedForeground, 14.dp)
         Spacer(Modifier.width(6.dp))
         Txt(f.name, CandyType.xs, c.foreground, maxLines = 1, modifier = Modifier.width(110.dp))
         IconButton(Icons.X, "Remove ${f.name}", size = 14.dp, box = 28.dp, onClick = onRemove)

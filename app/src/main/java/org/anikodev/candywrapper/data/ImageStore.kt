@@ -25,9 +25,10 @@ import org.anikodev.candywrapper.core.timing.Timeline
  * The thread's images: original bytes in a small disk cache under the app's cache directory, and
  * bitmaps decoded at the size they are drawn in a memory cache bounded by bytes. Downloads and
  * decodes run on [Dispatchers.IO], four at a time; cancelling the caller cancels the request.
- * Both caches key on the image's identity ([ImageRef.key]), not its signed URL.
+ * Both caches key on the image's identity ([ImageRef.key]), not its signed URL. A composer's
+ * [ImageRef.Local] image reads from its file, or is copied once from [open] (the content resolver).
  */
-class ImageStore(cacheDir: File) {
+class ImageStore(cacheDir: File, private val open: ((String) -> java.io.InputStream?)? = null) {
     private val dir = File(cacheDir, "img").apply { mkdirs() }
     private val io = Dispatchers.IO.limitedParallelism(4)
 
@@ -67,6 +68,9 @@ class ImageStore(cacheDir: File) {
 
     /** The original bytes on disk, downloading them first when needed. Null when the image cannot be read. */
     suspend fun file(ref: ImageRef, url: suspend () -> HttpUrl): File? = withContext(io) {
+        if (ref is ImageRef.Local && ref.uri.startsWith("file:")) {
+            return@withContext runCatching { File(java.net.URI(ref.uri)) }.getOrNull()?.takeIf { it.length() > 0 }
+        }
         val file = File(dir, hash(ref.key))
         if (file.length() > 0) {
             file.setLastModified(System.currentTimeMillis())
@@ -74,7 +78,10 @@ class ImageStore(cacheDir: File) {
         }
         val tmp = File(dir, file.name + ".part")
         try {
-            if (ref is ImageRef.Direct && ref.url.startsWith("data:", ignoreCase = true)) {
+            if (ref is ImageRef.Local) {
+                val input = runCatching { open?.invoke(ref.uri) }.getOrNull() ?: return@withContext null
+                input.use { i -> tmp.outputStream().use { i.copyTo(it) } }
+            } else if (ref is ImageRef.Direct && ref.url.startsWith("data:", ignoreCase = true)) {
                 val comma = ref.url.indexOf(',')
                 if (comma < 0 || !ref.url.substring(0, comma).endsWith(";base64", ignoreCase = true)) return@withContext null
                 tmp.writeBytes(Base64.decode(ref.url.substring(comma + 1), Base64.DEFAULT))

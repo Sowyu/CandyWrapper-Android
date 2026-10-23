@@ -34,7 +34,9 @@ data class ChatAttachment(val type: String, val id: String, val name: String, va
 /**
  * An image the thread shows. [key] is the image's identity for the caches, never the signed URL,
  * which changes every hour. An [Asset] is fetched through a signed `assets.createUrl` URL
- * (protocol.md 9.7); a [Direct] one is a plain http(s) or `data:` URL from Markdown.
+ * (protocol.md 9.7); a [Direct] one is a plain http(s) or `data:` URL from Markdown. A [Local] one
+ * is on the phone, a picked, pasted or stashed image waiting in the composer, read through its
+ * `content:` or `file:` [uri].
  */
 sealed interface ImageRef {
     val key: String
@@ -42,6 +44,7 @@ sealed interface ImageRef {
 
     data class Asset(override val key: String, override val name: String, val resource: JsonObject) : ImageRef
     data class Direct(override val key: String, override val name: String, val url: String) : ImageRef
+    data class Local(override val key: String, override val name: String, val uri: String) : ImageRef
 }
 
 /** A signed asset URL, relative to the environment's HTTP base, and the image size the server read from its header. */

@@ -341,6 +341,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                 },
                 trayAbove = pending != null || state.queued.isNotEmpty() || stashOpen || stashed.isNotEmpty(),
                 onStash = ::stashDraft,
+                onPaste = { uris -> scope.receivePasted(context, uris, MAX_PICKS - files.size) { if (files.size < MAX_PICKS) files += it } },
                 footer = {
                     val env by session.env.collectAsStateWithLifecycle()
                     DeviceRow(env.label, live)
@@ -555,8 +556,11 @@ fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: S
         for (uri in uris) if (files.size < MAX_PICKS) describePick(context, uri)?.let { if (files.none { f -> f.uri == uri }) files += it }
     }
 
+    var viewing by remember { mutableStateOf<ViewerState?>(null) }
+    val images = remember(session) { SessionImages(graph.images, session, null) { items, index -> viewing = ViewerState(items, index) } }
+
     ArtEmphasisEffect(ArtEmphasis.HERO)
-    Column(Modifier.fillMaxSize().page().windowInsetsPadding(BottomInsets)) {
+    CompositionLocalProvider(LocalImages provides images) { Column(Modifier.fillMaxSize().page().windowInsetsPadding(BottomInsets)) {
         TopBar("New thread", onBack = { nav.pop() }, subtitle = if (live) null else connection.label(), titleLead = project?.let { p -> { ProjectIcon(p, p.title) } })
         Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -609,8 +613,11 @@ fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: S
                     onSteer = null,
                     onStop = {},
                     onDismissError = { error = null },
+                    onPaste = { uris -> scope.receivePasted(context, uris, MAX_PICKS - files.size) { if (files.size < MAX_PICKS) files += it } },
                 )
             }
         }
+    }
+    viewing?.let { v -> ImageViewerDialog(v) { viewing = null } }
     }
 }
