@@ -15,8 +15,12 @@ android {
         applicationId = "org.anikodev.candywrapper"
         minSdk = 28
         targetSdk = 37
-        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
-        versionName = "0.1.0"
+        // CI's run number only grows, so the in-app updater compares it (core.update.UpdateManifest).
+        val run = System.getenv("GITHUB_RUN_NUMBER")
+        val commit = System.getenv("GITHUB_SHA")?.take(7) ?: "dev"
+        versionCode = (run ?: "1").toInt()
+        versionName = "0.1.${run ?: "0"}-$commit"
+        buildConfigField("String", "COMMIT", "\"$commit\"")
     }
 
     signingConfigs {

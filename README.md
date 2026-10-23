@@ -6,7 +6,9 @@ It exists because the official Android app is slow to start, slow to connect ove
 
 ## Install
 
-Every push to `main` builds a release APK and attaches it to the [nightly release](https://github.com/Sowyu/CandyWrapper-Android/releases/tag/nightly). The release notes say which key signed it. With the CI debug key, a nightly installs over the previous one as long as the CI cache kept that key; if Android refuses the update, uninstall first.
+Every push to `main` builds a release APK and attaches it to the [nightly release](https://github.com/Sowyu/CandyWrapper-Android/releases/tag/nightly) as `CandyWrapper-nightly.apk`, next to an `update.json` that names the build. The app checks it when it opens and when it comes back to the front, at most every 10 minutes, and shows a banner when a newer build exists. One tap downloads it, checks its SHA-256 and installs it. Timing has the installed version and a Check for updates button.
+
+Builds from before the release key were signed with a CI debug key. If one of those is installed, uninstall it once and install the nightly APK by hand.
 
 Use the release APK when judging speed. Debug builds run Compose without optimizations and are several times slower.
 
@@ -36,7 +38,7 @@ To try it against a server from an emulator, the host machine is `http://10.0.2.
 
 ## Release signing
 
-CI signs with a release key when these repository secrets exist, and with its debug key otherwise:
+CI signs every release with one key from these repository secrets, and fails if any is missing:
 
 - `CW_KEYSTORE_BASE64` holds the keystore file, base64-encoded.
 - `CW_KEYSTORE_PASSWORD` holds the keystore password.
@@ -53,7 +55,7 @@ gh secret set CW_KEY_ALIAS --body candywrapper
 gh secret set CW_KEY_PASSWORD
 ```
 
-Switching from the debug key to the release key changes the signature, so that one update needs an uninstall.
+The key is set. Its backup lives outside the repository; losing it means every install has to be removed once, because Android only updates an app signed with the same key.
 
 ## Reporting speed
 
