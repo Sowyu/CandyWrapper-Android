@@ -194,7 +194,28 @@ data class SidebarData(
     val scope: SidebarProjectGroup? = null,
 )
 
+/** A Redesign project section: its group (null for threads whose project has no group yet) and its threads in list order. */
+data class ProjectSection(val key: String, val group: SidebarProjectGroup?, val threads: List<ThreadSummary>)
+
 object SidebarModel {
+    /**
+     * CandyWrapper's Redesign sections (`SidebarListModel.projectSections`): [threads] under one
+     * section per project group, sections in [groups] order, threads kept in the order given. Threads
+     * whose project has no group yet follow in their own sections, in thread order.
+     */
+    fun projectSections(threads: List<ThreadSummary>, groups: List<SidebarProjectGroup>): List<ProjectSection> {
+        val groupOf = HashMap<String, SidebarProjectGroup>()
+        for (g in groups) for (k in g.memberKeys) groupOf[k] = g
+        val byKey = LinkedHashMap<String, MutableList<ThreadSummary>>()
+        for (g in groups) byKey[g.key] = ArrayList()
+        for (t in threads) {
+            val pk = "${t.envId}:${t.projectId}"
+            byKey.getOrPut(groupOf[pk]?.key ?: "project:$pk") { ArrayList() } += t
+        }
+        val byGroupKey = groups.associateBy { it.key }
+        return byKey.mapNotNull { (k, list) -> if (list.isEmpty()) null else ProjectSection(k, byGroupKey[k], list) }
+    }
+
     /**
      * `partitionSidebarThreads`: [threads] filtered to [scopeKeys] (`env:project`, null for all)
      * and split by section at [nowMs], each sorted as T3 sorts it. With [workingShelf] on, active

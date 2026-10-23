@@ -268,6 +268,8 @@ private fun SidebarHost(
     val settledOpen by graph.settledShelf.value.collectAsStateWithLifecycle()
     val snoozedOpen by graph.snoozedShelf.value.collectAsStateWithLifecycle()
     val workingOpen by graph.workingShelf.value.collectAsStateWithLifecycle()
+    val foldedValue by graph.redesignFolded.value.collectAsStateWithLifecycle()
+    val folded = remember(foldedValue) { foldedValue?.split('\n')?.filter { it.isNotEmpty() }?.toSet().orEmpty() }
 
     fun closeOnPhone() { scope.launch { drawer.close() } }
 
@@ -374,6 +376,10 @@ private fun SidebarHost(
             toggleSettled = { graph.settledShelf.set(!graph.settledShelf.value.value) },
             toggleSnoozed = { graph.snoozedShelf.set(!graph.snoozedShelf.value.value) },
             toggleWorking = { graph.workingShelf.set(!graph.workingShelf.value.value) },
+            toggleSection = { key ->
+                val now = graph.redesignFolded.value.value?.split('\n')?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+                graph.redesignFolded.set((if (key in now) now - key else now + key).joinToString("\n").ifEmpty { null })
+            },
             undo = {
                 val pending = undo
                 undo = null
@@ -391,6 +397,7 @@ private fun SidebarHost(
         SidebarPanel(
             current, environments, data, openKey, now, actions,
             shelves = Shelves(snoozed = snoozedOpen, settled = settledOpen, working = workingOpen),
+            folded = folded,
             archived = archived,
             undo = undo?.first,
         )

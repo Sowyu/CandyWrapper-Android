@@ -218,6 +218,18 @@ class SidebarLogicTest {
         assertEquals(emptyList(), SidebarModel.visibleSettled(settled, 10, expanded = false, openKey = null))
     }
 
+    @Test
+    fun redesignSectionsFollowTheGroupOrderAndKeepThreadOrder() {
+        val groups = ProjectGrouping.build(listOf(project("local", "a", "alpha"), project("local", "b", "beta")), preferredEnvId = "local")
+        val order = groups.map { it.key }
+        val threads = listOf(t("1", project = "b"), t("2", project = "a"), t("3", project = "b"), t("4", project = "gone"))
+        val sections = SidebarModel.projectSections(threads, groups)
+        assertEquals(order + "project:local:gone", sections.map { it.key })
+        assertEquals(listOf("1", "3"), sections.first { it.group?.label == "beta" }.threads.map { it.id })
+        assertNull(sections.last().group)
+        assertEquals(emptyList(), SidebarModel.projectSections(emptyList(), groups))
+    }
+
     // projectGrouping.ts, sortScopedProjectsForSidebar, sortSidebarV2ProjectGroups
 
     private fun project(env: String, id: String, title: String, root: String = "/code/$id", repo: String? = null, updated: Long = 0) =

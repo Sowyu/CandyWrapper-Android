@@ -25,6 +25,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.sp
+import org.anikodev.candywrapper.core.sidebar.ProjectSection
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
@@ -88,6 +91,7 @@ fun SidebarPanel(
     actions: SidebarActions,
     modifier: Modifier = Modifier,
     shelves: Shelves = Shelves(),
+    folded: Set<String> = emptySet(),
     archived: ArchivedList = ArchivedList(),
     undo: UndoNotice? = null,
     initialQuery: String = "",
@@ -121,7 +125,7 @@ fun SidebarPanel(
     Column(modifier.fillMaxSize().background(c.sidebar).windowInsetsPadding(WindowInsets.statusBars)) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             MachineSwitcher(current, environments, actions)
-            ThreadHeader(query, { query = it }, data, actions)
+            if (c.redesign) RedesignHeader(query, { query = it }, data, actions) else ThreadHeader(query, { query = it }, data, actions)
         }
         ConnectionAlerts(current, environments, actions)
         Box(Modifier.weight(1f)) {
@@ -149,26 +153,47 @@ fun SidebarPanel(
                     val snoozed = SidebarModel.visibleShelf(s.snoozed, shelves.snoozed, openKey)
                     val settled = SidebarModel.visibleSettled(s.settled, settledCount, shelves.settled, openKey)
                     val hiddenSettled = if (shelves.settled) s.settled.size - settled.size else 0
-                    val arrangement = remember(s.pinned.size + s.active.size) { ShelvesAtBottom(1 + s.pinned.size + s.active.size) }
+                    // Redesign (after Capy): Pinned and each project are sections with a header, above the shelves.
+                    val sections = if (c.redesign) remember(s.pinned, s.active, data.groups) {
+                        listOfNotNull(s.pinned.takeIf { it.isNotEmpty() }?.let { ProjectSection(PINNED_SECTION, null, it) }) + SidebarModel.projectSections(s.active, data.groups)
+                    } else emptyList()
+                    val shown = sections.map { sec -> if (sec.key in folded) sec.threads.filter { it.key == openKey } else sec.threads }
+                    val lead = if (c.redesign) 1 + sections.size + shown.sumOf { it.size } else 1 + s.pinned.size + s.active.size
+                    val arrangement = remember(lead) { ShelvesAtBottom(lead) }
                     LazyColumn(
                         Modifier.fillMaxSize().nestedScroll(pull.connection),
                         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
                         verticalArrangement = arrangement,
                     ) {
                         item(key = "pull", contentType = "pull") { PullIndicator(pull, "check the connection") }
-                        items(s.pinned, key = { it.key }, contentType = { "card" }) { t ->
-                            CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.PINNED) }
-                        }
-                        items(s.active, key = { it.key }, contentType = { "card" }) { t ->
-                            CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.ACTIVE) }
+                        if (c.redesign) {
+                            for ((i, sec) in sections.withIndex()) {
+                                val pinned = sec.key == PINNED_SECTION
+                                item(key = "sec:${sec.key}", contentType = "section") {
+                                    SectionHeader(sec.group, if (pinned) "Pinned" else sec.group?.label ?: data.projectLabel[sec.threads.first().let { "${it.envId}:${it.projectId}" }] ?: "Project",
+                                        sec.threads.size, sec.key !in folded) { actions.toggleSection(sec.key) }
+                                }
+                                items(shown[i], key = { it.key }, contentType = { "capy" }) { t ->
+                                    val section = if (pinned) SidebarSection.PINNED else SidebarSection.ACTIVE
+                                    CapyRow(row(t), now, inSection = true, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, section) }
+                                }
+                            }
+                        } else {
+                            items(s.pinned, key = { it.key }, contentType = { "card" }) { t ->
+                                CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.PINNED) }
+                            }
+                            items(s.active, key = { it.key }, contentType = { "card" }) { t ->
+                                CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.ACTIVE) }
+                            }
                         }
                         if (s.working.isNotEmpty()) {
                             item(key = "h:working", contentType = "shelf") {
                                 ShelfHeader(if (shelves.working) "Working" else "Working (${s.working.size})", shelves.working, info = false, onToggle = actions.toggleWorking)
                             }
                             // A closed shelf keeps the open thread, so sending folds it in without losing its row.
-                            items(working, key = { it.key }, contentType = { "card" }) { t ->
-                                CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.WORKING) }
+                            items(working, key = { it.key }, contentType = { if (c.redesign) "capy" else "card" }) { t ->
+                                if (c.redesign) CapyRow(row(t), now, inSection = false, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.WORKING) }
+                                else CardRow(row(t), now, menuFor == t.key, { actions.openThread(t) }, { menuFor = t.key }) { Menu(t, SidebarSection.WORKING) }
                             }
                         }
                         if (s.snoozed.isNotEmpty()) {
@@ -621,5 +646,169 @@ fun BoxScope.NewThreadSheet(
                 ) { onGroup(g) }
             }
         }
+    }
+}
+
+/** Redesign's Pinned section key, beside the project group keys. */
+private const val PINNED_SECTION = "pinned"
+
+/**
+ * Redesign's top of the sidebar, after Capy: New thread as a nav row, the search field, then a
+ * "Threads" label carrying the project filter, so each control is named once.
+ */
+@Composable
+private fun RedesignHeader(query: String, onQuery: (String) -> Unit, data: SidebarData?, actions: SidebarActions) {
+    val c = Candy.colors
+    var scopeOpen by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(
+            Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(Radius.md))
+                .combinedClickable(role = Role.Button, onClick = actions.newThreadAnywhere).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(Icons.SquarePen, c.sidebarMutedForeground, 16.dp)
+            Txt("New thread", CandyType.sm, c.sidebarForeground, maxLines = 1)
+        }
+        Row(Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(Radius.md)).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Search, c.sidebarMutedForeground, 16.dp)
+            Spacer(Modifier.width(10.dp))
+            BasicTextField(
+                query, onQuery,
+                Modifier.weight(1f).semantics { contentDescription = "Search threads" },
+                textStyle = CandyType.sm.merge(TextStyle(color = c.sidebarForeground)),
+                singleLine = true,
+                cursorBrush = SolidColor(c.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) Txt("Search", CandyType.sm, c.sidebarForeground, maxLines = 1)
+                        inner()
+                    }
+                },
+            )
+            if (query.isNotEmpty()) IconButton(Icons.X, "Clear thread search", tint = c.sidebarMutedForeground, size = 12.dp, box = 32.dp) { onQuery("") }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp).height(28.dp).padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Txt("Threads", CandyType.xsMedium, c.sidebarMutedForeground, maxLines = 1, modifier = Modifier.weight(1f))
+            val groups = data?.groups.orEmpty()
+            if (groups.isNotEmpty()) {
+                Box {
+                    val scope = data?.scope
+                    if (scope == null) IconButton(Icons.ListFilter, "Filter threads by project", tint = c.sidebarMutedForeground, size = 14.dp, box = 28.dp) { scopeOpen = true }
+                    else Box(
+                        Modifier.size(28.dp).clip(RoundedCornerShape(Radius.md)).background(c.sidebarRowActive)
+                            .combinedClickable(role = Role.Button, onClickLabel = "Filter threads by project: ${scope.label}") { scopeOpen = true },
+                        contentAlignment = Alignment.Center,
+                    ) { ProjectIcon(scope.representative, scope.label, size = 14.dp) }
+                    ScopeMenu(scopeOpen, { scopeOpen = false }, groups, scope, data?.spansMachines == true, actions)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A Redesign section header (SidebarProjectHeaderRowView): quiet so the threads lead. The 16dp
+ * project icon (a pin for Pinned), the name in muted 12, the count a step lighter, and a chevron
+ * while folded. It sits on the lower 22dp of its 32dp, so sections breathe above. A tap folds it.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SectionHeader(group: SidebarProjectGroup?, label: String, count: Int, expanded: Boolean, onToggle: () -> Unit) {
+    val c = Candy.colors
+    Row(
+        Modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(Radius.md))
+            .combinedClickable(role = Role.Button, onClickLabel = if (expanded) "Fold" else "Open", onClick = onToggle)
+            .semantics { stateDescription = if (expanded) "Expanded, $count threads" else "Folded, $count threads" }
+            .padding(start = 8.dp, top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (group == null && label == "Pinned") Icon(Icons.Pin, c.sidebarMutedForeground, 16.dp)
+        else ProjectIcon(group?.representative, label)
+        Spacer(Modifier.width(6.dp))
+        Txt(label, CandyType.xsMedium, c.sidebarMutedForeground, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+        Spacer(Modifier.width(5.dp))
+        Txt("$count", CandyType.xs.merge(TextStyle(fontFeatureSettings = "tnum")), c.sidebarMutedForeground.copy(alpha = 0.6f), maxLines = 1)
+        if (!expanded) {
+            Spacer(Modifier.width(4.dp))
+            Icon(Icons.ChevronRight, c.sidebarMutedForeground, 12.dp)
+        }
+    }
+}
+
+/**
+ * Redesign's thread row (after Capy, 48dp): the title with the status at its right, then a small
+ * gray line with the branch and the time. Under a section the header names the project; elsewhere
+ * a folder icon leads and the line names the project. Working shows Capy's dot grid, Waiting a white
+ * one. Long press opens the row's actions, Capy's hover group on a phone.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CapyRow(info: RowInfo, now: Long, inSection: Boolean, menuOpen: Boolean, onClick: () -> Unit, onLongClick: () -> Unit, menu: @Composable () -> Unit) {
+    val c = Candy.colors
+    val t = info.thread
+    val woke = t.isWoke(now)
+    val recede = SidebarStatus.recede(t.pill, t.unread, woke, info.active)
+    val top = SidebarStatus.top(t.pill, t.unread, woke)
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val fill = when {
+        info.active -> c.sidebarRowActive
+        pressed || menuOpen -> c.sidebarRowHover.compositeOverSidebar(c)
+        else -> Color.Transparent
+    }
+    val titleColor = when {
+        recede -> c.secondaryLabel
+        t.unread || woke || t.pill == StatusPill.INPUT -> c.foreground
+        t.pill == StatusPill.FAILED -> c.foreground.copy(alpha = 0.95f)
+        else -> c.foreground.copy(alpha = 0.9f)
+    }
+    val tnum = CandyType.xs.merge(TextStyle(fontFeatureSettings = "tnum"))
+    Box(Modifier.padding(vertical = 1.dp)) {
+        Row(
+            Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(Radius.xl)).background(fill)
+                .graphicsLayer { alpha = if (recede && t.pill == StatusPill.WORKING) 0.7f else 1f }
+                .combinedClickable(source, null, role = Role.Button, onLongClickLabel = "Thread actions", onLongClick = onLongClick, onClick = onClick)
+                .semantics { stateDescription = listOfNotNull(top?.let(::topLabel), info.project).joinToString() }
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (!inSection) {
+                Icon(Icons.Folder, c.sidebarMutedForeground, 16.dp, Modifier.padding(end = 8.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Txt(t.title, CandyType.sm, titleColor, maxLines = 1, modifier = Modifier.weight(1f), weight = if (recede) FontWeight.Normal else FontWeight.Medium)
+                    if (t.section == 0 && !inSection) Icon(Icons.Pin, c.mutedForeground.copy(alpha = 0.65f), 12.dp, Modifier.padding(start = 6.dp), description = "Pinned")
+                    when (top) {
+                        null -> if (!inSection) Txt(relativeTime(t.activityAt, now), tnum, c.secondaryLabel, maxLines = 1, modifier = Modifier.padding(start = 6.dp))
+                        TopStatus.WORKING, TopStatus.WAITING -> Row(Modifier.padding(start = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            val color = if (top == TopStatus.WORKING) c.info else c.foreground
+                            if (t.workingSince > 0) TickingText(t.workingSince, ::duration, tnum, c.secondaryLabel, roll = true)
+                            DotGrid(color, Modifier.size(16.dp), running = top == TopStatus.WORKING, small = top == TopStatus.WAITING)
+                        }
+                        else -> {
+                            val color = when (top) {
+                                TopStatus.APPROVAL -> c.warningForeground
+                                TopStatus.INPUT -> c.statusInput
+                                TopStatus.FAILED -> c.error
+                                TopStatus.LIMITED, TopStatus.WOKE -> c.warning
+                                else -> c.success
+                            }
+                            Txt(topLabel(top), CandyType.xsMedium, color, maxLines = 1, modifier = Modifier.padding(start = 6.dp))
+                        }
+                    }
+                }
+                val meta = listOfNotNull(
+                    if (!inSection && t.branch == null) info.project else null,
+                    t.branch,
+                    info.machine,
+                    if (inSection) relativeTime(t.activityAt, now) else null,
+                ).filter { it.isNotEmpty() }.joinToString(" · ")
+                if (meta.isNotEmpty()) Txt(meta, tnum.copy(fontSize = 11.sp, lineHeight = 16.sp), c.secondaryLabel, maxLines = 1)
+            }
+        }
+        menu()
     }
 }

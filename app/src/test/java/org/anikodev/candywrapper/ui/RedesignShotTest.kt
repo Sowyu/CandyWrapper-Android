@@ -61,6 +61,24 @@ class RedesignShotTest {
     @Test fun runningLight() = running(false)
     @Test fun runningDark() = running(true)
 
+    private fun sidebar(dark: Boolean) = redesignShot("sidebar-phone", dark) {
+        AppShell(
+            DrawerState(open = true),
+            sidebar = { SidebarPanel(Fixtures.environments[0], Fixtures.environments, Fixtures.data, "e1:t1", Fixtures.NOW, SidebarActions()) },
+        ) { ThreadShotTest.ThreadScreenFixture() }
+    }
+    @Test fun sidebarLight() = sidebar(false)
+    @Test fun sidebarDark() = sidebar(true)
+
+    private fun tablet(dark: Boolean) = redesignShot("thread-tablet", dark) {
+        AppShell(
+            DrawerState(open = false),
+            sidebar = { SidebarPanel(Fixtures.environments[0], Fixtures.environments, Fixtures.data, "e1:t1", Fixtures.NOW, SidebarActions()) },
+        ) { ThreadShotTest.ThreadScreenFixture() }
+    }
+    @Config(qualifiers = TABLET) @Test fun tabletLight() = tablet(false)
+    @Config(qualifiers = TABLET) @Test fun tabletDark() = tablet(true)
+
     private fun settings(dark: Boolean) = redesignShot("settings-phone", dark) {
         AppShell(DrawerState(open = false), sidebar = {}) {
             ArtEmphasisEffect(ArtEmphasis.SETTINGS)

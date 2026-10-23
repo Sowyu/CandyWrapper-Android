@@ -120,6 +120,8 @@ class SidebarActions(
     val toggleSettled: () -> Unit = {},
     val toggleSnoozed: () -> Unit = {},
     val toggleWorking: () -> Unit = {},
+    /** Redesign: folds or opens a project section, by group key ("pinned" for Pinned). */
+    val toggleSection: (String) -> Unit = {},
     val undo: () -> Unit = {},
     /** Pull-to-refresh: check the connection now. */
     val refresh: () -> Unit = {},
