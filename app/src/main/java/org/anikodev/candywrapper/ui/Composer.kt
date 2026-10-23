@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -214,7 +215,9 @@ fun Composer(
             Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                     Box {
-                        val (glyph, glyphTint) = providerIcon(provider?.driver)
+                        val (glyph, brandTint) = providerIcon(provider?.driver)
+                        // Redesign draws Claude's spark white, like the rest of its chips.
+                        val glyphTint = if (c.redesign && brandTint == Color.Unspecified) c.foreground else brandTint
                         SelectChip(
                             modelLabel(server, settings.model), icon = glyph, iconTint = glyphTint, description = "Model", enabled = server.providers.isNotEmpty() && locked == null,
                             open = menu == Picker.MODEL, labelMax = if (compact) 112.dp else 160.dp, chevron = !compact,
@@ -358,6 +361,7 @@ private fun PlanToggle(on: Boolean, enabled: Boolean, onToggle: () -> Unit) {
 /** T3's model picker (13-model-picker): models grouped by provider, each with its glyph. */
 @Composable
 private fun ModelMenu(open: Boolean, server: ServerInfo, settings: ComposerSettings, onModel: (ModelSelection) -> Unit, onDismiss: () -> Unit) {
+    if (Candy.redesign) return RedesignModelPicker(open, server, settings, onModel, onDismiss)
     Menu(open, onDismiss, side = MenuSide.ABOVE, minWidth = 260.dp) {
         if (server.providers.isEmpty()) MenuLabel("The computer has not listed its models yet.")
         for ((i, p) in server.providers.withIndex()) {
@@ -435,5 +439,52 @@ fun Switch(on: Boolean) {
         contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
     ) {
         Box(Modifier.size(16.dp).clip(CircleShape).background(knob))
+    }
+}
+
+/**
+ * Redesign's model picker, after Capy's (ModelPickerView under Dither): a slim rail of providers with
+ * the one shown on a rounded fill, then that provider's card and its models, one line each with the
+ * check at the right. The Mac's search field is left out: a phone lists a handful of models and
+ * popups here do not host text fields.
+ */
+@Composable
+private fun RedesignModelPicker(open: Boolean, server: ServerInfo, settings: ComposerSettings, onModel: (ModelSelection) -> Unit, onDismiss: () -> Unit) {
+    val c = Candy.colors
+    var rail by remember(open) { mutableStateOf(settings.model?.instanceId ?: server.providers.firstOrNull()?.instanceId) }
+    Menu(open, onDismiss, side = MenuSide.ABOVE, minWidth = 320.dp, maxWidth = 380.dp) {
+        if (server.providers.isEmpty()) {
+            MenuLabel("The computer has not listed its models yet.")
+            return@Menu
+        }
+        val p = server.providers.firstOrNull { it.instanceId == rail } ?: server.providers.first()
+        Row {
+            if (server.providers.size > 1) {
+                Column(Modifier.padding(end = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    for (q in server.providers) {
+                        val (glyph, tint) = providerMark(q.driver)
+                        Box(
+                            Modifier.size(40.dp).clip(RoundedCornerShape(Radius.md)).background(if (q.instanceId == p.instanceId) c.accent else Color.Transparent)
+                                .clickable(role = Role.Tab, onClickLabel = q.name) { rail = q.instanceId }
+                                .semantics { contentDescription = q.name },
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(glyph, if (q.instanceId == p.instanceId) tint else c.mutedForeground, 18.dp) }
+                    }
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                ProviderCard(p)
+                Box(Modifier.fillMaxWidth().height(1.dp).background(c.border))
+                Spacer(Modifier.height(4.dp))
+                for (m in p.models) {
+                    val selected = settings.model?.instanceId == p.instanceId && settings.model.model == m.slug
+                    MenuItem(m.name, detail = if (!p.ready) "Not ready on the computer" else null, selected = selected, enabled = p.ready) {
+                        val kept = settings.model?.options.orEmpty().filter { o -> m.options.any { it.id == o.id } }
+                        onModel(ModelSelection(p.instanceId, m.slug, kept))
+                        onDismiss()
+                    }
+                }
+            }
+        }
     }
 }

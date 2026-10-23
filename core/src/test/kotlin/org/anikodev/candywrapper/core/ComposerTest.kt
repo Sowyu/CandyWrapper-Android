@@ -16,6 +16,7 @@ import org.anikodev.candywrapper.core.model.InteractionModeChoice
 import org.anikodev.candywrapper.core.model.ModelSelection
 import org.anikodev.candywrapper.core.model.OptionValue
 import org.anikodev.candywrapper.core.model.ServerInfo
+import org.anikodev.candywrapper.core.model.UsageWindow
 import org.anikodev.candywrapper.core.model.answer
 import org.anikodev.candywrapper.core.sync.Commands
 import org.anikodev.candywrapper.core.sync.Delivery
@@ -230,5 +231,19 @@ class ComposerTest {
         assertTrue(p.hasMoreHistory)
         assertTrue(p.prependHistory("c0", json("""{"items":[],"nextCursor":null,"hasMoreHistory":false}""")))
         assertFalse(p.hasMoreHistory)
+    }
+
+    @Test
+    fun providerCardReadsStatusAccountAndTheMostUsedWindow() {
+        val p = ServerInfo.parse(json("""{"providers":[{"instanceId":"c","driver":"claudeAgent","status":"warning","message":"Update ready","models":[],
+            "auth":{"status":"authenticated","email":" a@b.c ","label":"Claude Max"},
+            "usageLimits":{"checkedAt":"2026-10-23T00:00:00.000Z","windows":[{"id":"5h","kind":"session","label":"5-hour","usedPercent":12.4},{"id":"w","kind":"weekly","label":"Weekly","usedPercent":61.6}]}}]}""")).providers.single()
+        assertEquals("warning", p.status)
+        assertEquals("a@b.c", p.authEmail)
+        assertEquals("Claude Max", p.authLabel)
+        assertEquals(UsageWindow("Weekly", 62), p.usage)
+        val bare = ServerInfo.parse(json("""{"providers":[{"instanceId":"x","models":[],"usageLimits":{"windows":[{"label":"5-hour","usedPercent":5}],"unavailable":{"reason":"unsupported"}}}]}""")).providers.single()
+        assertEquals(null, bare.usage)
+        assertEquals("ready", bare.status)
     }
 }

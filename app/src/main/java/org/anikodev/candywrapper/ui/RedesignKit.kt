@@ -28,7 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -202,3 +205,82 @@ fun HeaderPill(diff: DiffTotals?, onDiff: (DiffTotals) -> Unit, actions: @Compos
 @Composable
 fun PillIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, box: Dp = 32.dp, onClick: () -> Unit) =
     IconButton(icon, description, tint = Candy.colors.foreground, size = 16.dp, box = box, onClick = onClick)
+
+/** Anthropic's "A" mark: Redesign draws Claude as its provider with its maker's logo, like OpenAI's for Codex. */
+val AnthropicMark: androidx.compose.ui.graphics.vector.ImageVector by lazy {
+    androidx.compose.ui.graphics.vector.ImageVector.Builder("anthropic", 24.dp, 24.dp, 24f, 24f).addPath(
+        androidx.compose.ui.graphics.vector.PathParser().parsePathString(
+            "M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z",
+        ).toNodes(),
+        fill = androidx.compose.ui.graphics.SolidColor(Color.Black),
+    ).build()
+}
+
+/** A provider's glyph as Redesign's picker draws it: Anthropic's mark for Claude, in the foreground. */
+@Composable
+fun providerMark(driver: String?): Pair<androidx.compose.ui.graphics.vector.ImageVector, Color> = when (driver) {
+    null, "codex", "openai" -> providerIcon(driver)
+    else -> AnthropicMark to Candy.colors.foreground
+}
+
+/**
+ * Redesign's provider card at the top of the model list (DitherProviderCard): the glyph, the name and
+ * a status dot, then the e-mail, blurred until tapped, and the plan, then the most-used limit window
+ * as a thin bar with "N% used". Lines without data stay out. Below Android 12 there is no blur, so
+ * the hidden e-mail shows as dots.
+ */
+@Composable
+fun ProviderCard(p: org.anikodev.candywrapper.core.model.ProviderInfo) {
+    val c = Candy.colors
+    var reveal by remember(p.instanceId) { mutableStateOf(false) }
+    val (glyph, tint) = providerMark(p.driver)
+    val statusColor = when (p.status) {
+        "ready" -> c.success
+        "warning" -> c.warning
+        "error" -> c.error
+        else -> c.mutedForeground
+    }
+    val statusText = when (p.status) {
+        "ready" -> "Connected"
+        "warning" -> p.message ?: "Needs attention"
+        "error" -> p.message ?: "Not connected"
+        else -> p.message ?: "Disabled"
+    }
+    androidx.compose.foundation.layout.Column(
+        Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 10.dp)
+            .semantics { contentDescription = listOfNotNull(p.name, statusText, p.authLabel, p.usage?.let { "${it.usedPercent}% used" }).joinToString() },
+    ) {
+        Row(Modifier.height(24.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(glyph, tint, 18.dp)
+            androidx.compose.foundation.layout.Spacer(Modifier.width(10.dp))
+            Txt(p.name, CandyType.smMedium, c.foreground, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+            androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+            StatusDot(statusColor, size = 7.dp)
+        }
+        if (p.authEmail != null || p.authLabel != null) {
+            Row(Modifier.padding(start = 28.dp).heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                p.authEmail?.let { email ->
+                    val blur = android.os.Build.VERSION.SDK_INT >= 31
+                    val shown = if (reveal || blur) email else "•".repeat(minOf(email.length, 12))
+                    Txt(
+                        shown, CandyType.xs, c.mutedForeground, maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false)
+                            .clickable(role = Role.Button, onClickLabel = if (reveal) "Hide e-mail" else "Show e-mail") { reveal = !reveal }
+                            .let { if (blur && !reveal) it.blur(4.dp) else it },
+                    )
+                    androidx.compose.foundation.layout.Spacer(Modifier.width(4.dp))
+                }
+                p.authLabel?.let { Txt(if (p.authEmail != null) "· $it" else it, CandyType.xs, c.mutedForeground, maxLines = 1) }
+            }
+        }
+        p.usage?.let { u ->
+            Row(Modifier.padding(start = 28.dp, top = 2.dp).height(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f).height(3.dp).clip(RoundedCornerShape(1.5.dp)).background(c.foreground.copy(alpha = 0.1f))) {
+                    Box(Modifier.fillMaxWidth(u.usedPercent / 100f).height(3.dp).clip(RoundedCornerShape(1.5.dp)).background(c.primary))
+                }
+                androidx.compose.foundation.layout.Spacer(Modifier.width(16.dp))
+                Txt("${u.usedPercent}% used", CandyType.xsMedium, c.foreground, maxLines = 1)
+            }
+        }
+    }
+}

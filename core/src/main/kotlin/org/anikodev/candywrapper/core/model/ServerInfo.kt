@@ -5,6 +5,8 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlin.math.roundToInt
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -66,6 +68,9 @@ data class OptionDescriptor(val id: String, val label: String, val type: String,
     val defaultChoice: OptionChoice? get() = choices.firstOrNull { it.isDefault } ?: choices.firstOrNull()
 }
 
+/** One `ServerProviderUsageWindow`: its label and how much is used, 0 to 100. */
+data class UsageWindow(val label: String, val usedPercent: Int)
+
 data class ModelInfo(val slug: String, val name: String, val options: List<OptionDescriptor>)
 
 /** One `ServerProvider` (protocol.md 9.6), trimmed to what the composer offers. */
@@ -78,6 +83,14 @@ data class ProviderInfo(
     val showInteractionModeToggle: Boolean,
     /** Empty means every mode. */
     val runtimeModes: List<String>,
+    /** `status`: ready, warning, error or disabled. */
+    val status: String = "ready",
+    val message: String? = null,
+    /** The signed-in account, `auth.email`, and its plan, `auth.label`. */
+    val authEmail: String? = null,
+    val authLabel: String? = null,
+    /** The most-used `usageLimits` window, when the provider reports any. */
+    val usage: UsageWindow? = null,
 ) {
     fun model(slug: String) = models.firstOrNull { it.slug == slug }
 }
@@ -165,6 +178,13 @@ data class ServerInfo(
                 models = models,
                 showInteractionModeToggle = o.bool("showInteractionModeToggle") != false,
                 runtimeModes = o.arr("supportedRuntimeModes").orEmpty().mapNotNull { (it as? JsonPrimitive)?.content },
+                status = o.str("status") ?: "ready",
+                message = o.str("message"),
+                authEmail = o.obj("auth")?.str("email")?.trim()?.ifEmpty { null },
+                authLabel = o.obj("auth")?.str("label")?.trim()?.ifEmpty { null },
+                usage = o.obj("usageLimits")?.takeIf { it.obj("unavailable") == null }?.arr("windows").orEmpty()
+                    .mapNotNull { w -> (w as? JsonObject)?.let { wo -> wo.str("label")?.let { l -> (wo["usedPercent"] as? JsonPrimitive)?.doubleOrNull?.let { UsageWindow(l, it.coerceIn(0.0, 100.0).roundToInt()) } } } }
+                    .maxByOrNull { it.usedPercent },
             )
         }
     }
