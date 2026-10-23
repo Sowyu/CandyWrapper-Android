@@ -80,7 +80,7 @@ private fun SignIn(graph: AppGraph) {
         graph.refreshConnect()?.let { error = it }
     }
 
-    Txt("Sign in with your T3 Connect account to reach the computers linked to it.", CandyType.ui, c.mutedForeground)
+    Txt("Sign in with your T3 Connect account to reach the computers linked to it.", CandyType.sm, c.mutedForeground)
     val pending = challenge
     if (pending == null) {
         TextInput(email, { email = it }, "you@example.com", label = "Email", keyboard = KeyboardOptions(keyboardType = KeyboardType.Email))
@@ -101,7 +101,7 @@ private fun SignIn(graph: AppGraph) {
             CButton(if (usePassword) "Use an email code" else "Use a password", kind = ButtonKind.GHOST) { usePassword = !usePassword }
         }
     } else {
-        Txt("We sent a code to ${pending.sentTo ?: email}.", CandyType.ui, c.foreground)
+        Txt("We sent a code to ${pending.sentTo ?: email}.", CandyType.sm, c.foreground)
         TextInput(code, { code = it.filter(Char::isDigit) }, "123456", label = "Code", keyboard = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             style = CandyType.mono)
         Row(horizontalArrangement = ButtonRow) {
@@ -126,10 +126,10 @@ private fun Account(graph: AppGraph, nav: Navigator) {
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val c = Candy.colors
-    Txt("Signed in as ${account?.identifier ?: "your account"}", CandyType.uiMedium, c.foreground)
+    Txt("Signed in as ${account?.identifier ?: "your account"}", CandyType.smMedium, c.foreground)
     val linked = sessions.filter { it.env.value.kind == EnvironmentKind.CONNECT }
     Txt(if (linked.isEmpty()) "No linked computers yet. Turn on T3 Connect in T3 Code's settings on your computer." else "${linked.size} linked computers",
-        CandyType.ui, c.mutedForeground)
+        CandyType.sm, c.mutedForeground)
     if (linked.isNotEmpty()) Card {
         for ((i, s) in linked.withIndex()) {
             if (i > 0) Divider()
@@ -154,5 +154,5 @@ private fun Account(graph: AppGraph, nav: Navigator) {
             }
         })
     }
-    message?.let { Txt(it, CandyType.small, c.mutedForeground) }
+    message?.let { Txt(it, CandyType.sm, c.mutedForeground) }
 }

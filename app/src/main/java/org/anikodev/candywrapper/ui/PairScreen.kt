@@ -38,7 +38,7 @@ fun PairScreen(graph: AppGraph, nav: Navigator, prefill: String?) {
         TopBar("Pair a computer", onBack = { nav.pop() })
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Txt("On the computer running T3 Code, run `npx t3 pair` and paste the link it prints. The phone must reach that address, on the same network or over Tailscale.",
-                CandyType.ui, c.mutedForeground)
+                CandyType.sm, c.mutedForeground)
             TextInput(link, { link = it; error = null }, "http://192.168.1.20:3773/pair#…", label = "Pairing link or address",
                 singleLine = false, minLines = 2, keyboard = KeyboardOptions(keyboardType = KeyboardType.Uri), style = CandyType.mono)
             TextInput(code, { code = it.uppercase(); error = null }, "Only if the link has none", label = "Pairing code")

@@ -78,7 +78,7 @@ fun DiffScreen(graph: AppGraph, nav: Navigator, screen: Screen.Diff) {
         }
         when {
             error != null -> Notice(error!!, c.foreground, c.muted, Modifier.padding(16.dp), action = "Retry") { attempt++ }
-            files == null -> Txt("Loading the diff", CandyType.ui, c.mutedForeground, modifier = Modifier.padding(16.dp))
+            files == null -> Txt("Loading the diff", CandyType.sm, c.mutedForeground, modifier = Modifier.padding(16.dp))
             files!!.isEmpty() -> EmptyState("No changes", "This run left the files as they were.")
             else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                 files!!.forEachIndexed { index, file ->
@@ -86,7 +86,7 @@ fun DiffScreen(graph: AppGraph, nav: Navigator, screen: Screen.Diff) {
                         FileHeader(file, collapsed[index] == true) { collapsed[index] = !(collapsed[index] ?: false) }
                     }
                     if (collapsed[index] != true) {
-                        if (file.binary) item(key = "bin:$index", contentType = "note") { Txt("Binary file", CandyType.meta, c.mutedForeground, modifier = Modifier.padding(16.dp)) }
+                        if (file.binary) item(key = "bin:$index", contentType = "note") { Txt("Binary file", CandyType.xs, c.mutedForeground, modifier = Modifier.padding(16.dp)) }
                         items(file.lines.size, key = { "l:$index:$it" }, contentType = { "line" }) { i -> DiffLineView(file.lines[i], wrap, numbers = true) }
                     }
                 }
@@ -108,10 +108,10 @@ private fun FileHeader(file: DiffFile, collapsed: Boolean, onToggle: () -> Unit)
             Icon(if (collapsed) Icons.ChevronRight else Icons.ChevronDown, c.mutedForeground, 15.dp)
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
-                Txt(file.path.substringAfterLast('/'), CandyType.uiMedium, c.foreground, maxLines = 1)
+                Txt(file.path.substringAfterLast('/'), CandyType.smMedium, c.foreground, maxLines = 1)
                 val dir = file.path.substringBeforeLast('/', "")
                 val renamed = file.oldPath?.let { "from $it" }
-                if (dir.isNotEmpty() || renamed != null) Txt(listOfNotNull(dir.ifEmpty { null }, renamed).joinToString(" · "), CandyType.meta, c.mutedForeground, maxLines = 1)
+                if (dir.isNotEmpty() || renamed != null) Txt(listOfNotNull(dir.ifEmpty { null }, renamed).joinToString(" · "), CandyType.xs, c.mutedForeground, maxLines = 1)
             }
             Txt("+${file.additions}", CandyType.monoSmall, c.diffAdditionForeground)
             Spacer(Modifier.width(8.dp))

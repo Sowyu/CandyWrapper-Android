@@ -63,6 +63,6 @@ fun PullIndicator(pull: PullRefresh, label: String) {
     if (pull.offset <= 0f) return
     val height = with(LocalDensity.current) { pull.offset.toDp() }
     Box(Modifier.fillMaxWidth().height(height), contentAlignment = Alignment.Center) {
-        Txt(if (pull.armed) "Release to $label" else "Pull to $label", CandyType.meta, Candy.colors.mutedForeground)
+        Txt(if (pull.armed) "Release to $label" else "Pull to $label", CandyType.xs, Candy.colors.mutedForeground)
     }
 }

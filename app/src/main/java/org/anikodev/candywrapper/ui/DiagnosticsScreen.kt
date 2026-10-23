@@ -49,7 +49,7 @@ fun DiagnosticsScreen(graph: AppGraph, nav: Navigator) {
         LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 12.dp)) {
             item(key = "update") { UpdateSettingsRow(graph.updater) }
             items(sessions, key = { "env:" + it.id }) { s ->
-                Txt("${s.env.value.label}: ${s.state.value.label()}", CandyType.meta, c.foreground, modifier = Modifier.padding(vertical = 4.dp))
+                Txt("${s.env.value.label}: ${s.state.value.label()}", CandyType.xs, c.foreground, modifier = Modifier.padding(vertical = 4.dp))
             }
             items(marks.size, key = { "mark:$it:${marks[it].atMs}" }) { i ->
                 Txt(marks[i].format(), CandyType.monoSmall.copy(fontSize = 11.sp), c.mutedForeground, modifier = Modifier.padding(vertical = 2.dp))

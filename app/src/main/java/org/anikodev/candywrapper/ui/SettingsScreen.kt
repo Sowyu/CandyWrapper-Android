@@ -79,7 +79,7 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                     Divider()
                     Box(Modifier.padding(horizontal = 4.dp)) { UpdateSettingsRow(graph.updater) }
                 }
-                Txt("CandyWrapper ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", CandyType.meta, c.mutedForeground,
+                Txt("CandyWrapper ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", CandyType.xs, c.mutedForeground,
                     modifier = Modifier.padding(start = 4.dp, top = 16.dp))
                 Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 24.dp))
             }
@@ -94,7 +94,7 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                     Txt(
                         if (env.kind == EnvironmentKind.CONNECT) "This forgets the computer and its saved threads on this phone. It comes back while you stay signed in to T3 Connect."
                         else "This forgets the computer, its saved threads and this phone's access. Pair it again to come back.",
-                        CandyType.small, c.mutedForeground, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        CandyType.sm, c.mutedForeground, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                     )
                     Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = ButtonRow) {
                         CButton("Remove", kind = ButtonKind.DESTRUCTIVE) {
