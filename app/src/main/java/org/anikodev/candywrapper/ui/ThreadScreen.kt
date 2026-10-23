@@ -291,15 +291,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
         ) {
             val pending = state.pending.firstOrNull()
             if (state.phase == ThreadSession.Phase.DELETED) return@ThreadView
-            when {
-                pending != null && pending.isQuestion -> QuestionPanel(pending, busy != null || !live,
-                    onAnswer = { answers -> act(null) { thread.answer(pending.requestId, answers) } },
-                    onDismiss = { act(null) { thread.dismissQuestion(pending.requestId) } })
-                pending != null -> ApprovalPanel(pending, busy != null || !live) { decision -> act(null) { thread.approve(pending.requestId, decision) } }
-                state.queued.isNotEmpty() -> QueuedList(state.queued, canSteer = state.stoppableRunId != null,
-                    onSteer = { runId -> act(null) { thread.steerQueued(runId) } },
-                    onCancel = { runId -> act(null) { thread.cancelQueued(runId) } })
-            }
+            // Stash rides at the top of the stack; a request or the queue sits right on the composer (CandyWrapper f8ddfbf5).
             if (stashOpen && pending == null) {
                 StashList(
                     stashed, System.currentTimeMillis(), canSwap = draft.isNotBlank() || files.isNotEmpty(),
@@ -310,6 +302,15 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                 )
             } else if (pending == null) {
                 StashTab(stashed.size) { stashOpen = true }
+            }
+            when {
+                pending != null && pending.isQuestion -> QuestionPanel(pending, busy != null || !live,
+                    onAnswer = { answers -> act(null) { thread.answer(pending.requestId, answers) } },
+                    onDismiss = { act(null) { thread.dismissQuestion(pending.requestId) } })
+                pending != null -> ApprovalPanel(pending, busy != null || !live) { decision -> act(null) { thread.approve(pending.requestId, decision) } }
+                state.queued.isNotEmpty() -> QueuedList(state.queued, canSteer = state.stoppableRunId != null,
+                    onSteer = { runId -> act(null) { thread.steerQueued(runId) } },
+                    onCancel = { runId -> act(null) { thread.cancelQueued(runId) } })
             }
             Composer(
                 text = draft, onText = { draft = it },

@@ -46,8 +46,8 @@ class RedesignShotTest {
     private fun running(dark: Boolean) = redesignShot("running-phone", dark) {
         AppShell(DrawerState(open = false), sidebar = {}) {
             ThreadShotTest.ThreadScreenFixture(ThreadFixtures.state.copy(running = true, queued = ThreadFixtures.queued)) {
-                QueuedList(ThreadFixtures.queued, canSteer = true, onSteer = {}, onCancel = {})
                 StashTab(3) {}
+                QueuedList(ThreadFixtures.queued, canSteer = true, onSteer = {}, onCancel = {})
                 Composer(
                     text = "", onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
                     running = true, canStop = true, files = emptyList(), busy = null, error = null, connected = true,
