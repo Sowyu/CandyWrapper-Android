@@ -179,6 +179,30 @@ object Commands {
         put("cwd", cwd)
     }
 
+    /**
+     * `scheduledTasks.upsert` for an interval task with no thread (contracts `scheduledTask.ts`
+     * `ScheduledTaskUpsertInput`). A null [id] creates one; `threadId` is left out, so it belongs to no thread.
+     */
+    fun upsertScheduledTask(
+        id: String?, title: String, prompt: String, enabled: Boolean, everyMs: Long, projectId: String,
+        workspaceStrategy: JsonElement, modelSelection: JsonElement, runtimeMode: String, interactionMode: String, creationSource: String,
+    ) = buildJsonObject {
+        if (id != null) put("id", id)
+        put("title", title)
+        put("prompt", prompt)
+        put("enabled", enabled)
+        put("schedule", buildJsonObject { put("type", "interval"); put("everyMs", everyMs) })
+        put("projectId", projectId)
+        put("workspaceStrategy", workspaceStrategy)
+        put("modelSelection", modelSelection)
+        put("runtimeMode", runtimeMode)
+        put("interactionMode", interactionMode)
+        put("creationSource", creationSource)
+    }
+
+    /** `scheduledTasks.delete` (`ScheduledTaskDeleteInput`). */
+    fun deleteScheduledTask(id: String) = buildJsonObject { put("id", id) }
+
     private fun toJson(value: Any): JsonElement = when (value) {
         is JsonElement -> value
         is String -> JsonPrimitive(value)
