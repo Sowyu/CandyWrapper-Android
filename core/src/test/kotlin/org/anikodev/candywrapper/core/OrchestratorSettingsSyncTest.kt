@@ -262,7 +262,10 @@ class OrchestratorSettingsSyncTest {
 
     private fun list(vararg tasks: JsonObject) = buildJsonObject { put("tasks", JsonArray(tasks.toList())) }
 
-    /** Several tasks on one machine: every side keeps the smallest id, writes the merge there and deletes the rest. */
+    /**
+     * Several tasks on one machine: the merge goes to the smallest readable id and the other readable ones are
+     * deleted. A task the phone can't read may be a newer version's, so it is never overwritten or deleted.
+     */
     @Test
     fun duplicateTasksKeepTheSmallestId() {
         val older = Sync.Document(mapOf("name" to Entry(JsonPrimitive("Old"), Stamp(1, "mac")))).prompt
@@ -279,7 +282,7 @@ class OrchestratorSettingsSyncTest {
         val plan = Sync.plan(m, tasks, null)
         val up = assertNotNull(plan.upsert)
         assertEquals("a", up.str("id"))
-        assertEquals(listOf("b", "c"), plan.delete)
+        assertEquals(listOf("c"), plan.delete)
         // An update keeps the task's own placement.
         assertEquals("p-a", up.str("projectId"))
         assertEquals("/w/a", up.obj("workspaceStrategy")!!.str("worktreePath"))
@@ -287,14 +290,21 @@ class OrchestratorSettingsSyncTest {
         assertEquals("full-access", up.str("runtimeMode"))
         assertEquals("plan", up.str("interactionMode"))
         assertEquals("New", Sync.Document.parse(up.str("prompt")!!)!!.settings["name"]!!.value.let { (it as JsonPrimitive).content })
-        // Two tasks whose only readable document is already current still collapse to one.
+        // An unreadable task with a smaller id beside one current document: both are left alone.
         val same = Sync.Document(mapOf("name" to Entry(JsonPrimitive("Ada"), Stamp(3, "mac")))).prompt
         val two = Sync.tasks(list(task("b", same), task("a", "garbage")))
         val m2 = Sync.merge(OrchestratorConfig(), emptyMap(), two.mapNotNull { it.document }, "env-a")
         assertNull(m2.write)
-        val plan2 = Sync.plan(m2, two, null)
-        assertEquals("a", plan2.upsert?.str("id"))
-        assertEquals(listOf("b"), plan2.delete)
+        assertEquals(Sync.Plan(null, emptyList()), Sync.plan(m2, two, null))
+        // A local edit still lands on the readable task, never on the unreadable one.
+        val edited = Sync.merge(OrchestratorConfig(name = "Bea"), mapOf("name" to Stamp(9, "phone")), two.mapNotNull { it.document }, "env-a")
+        val plan3 = Sync.plan(edited, two, Sync.NewTask("p1", ModelSelection("codex", "gpt-6.1-sol")))
+        assertEquals("b", plan3.upsert?.str("id"))
+        assertEquals(emptyList<String>(), plan3.delete)
+        // Only unreadable tasks: nothing is written, and no second task is made beside them.
+        val unreadable = Sync.tasks(list(task("a", "garbage"), task("b", """{"format":"candywrapper.orchestrator-settings","version":2}""")))
+        val m3 = Sync.merge(OrchestratorConfig(name = "Bea"), mapOf("name" to Stamp(9, "phone")), emptyList(), "env-a")
+        assertEquals(Sync.Plan(null, emptyList()), Sync.plan(m3, unreadable, Sync.NewTask("p1", ModelSelection("codex", "gpt-6.1-sol"))))
         // One current task: nothing to send.
         val one = Sync.tasks(list(task("a", same)))
         assertEquals(Sync.Plan(null, emptyList()), Sync.plan(Sync.merge(OrchestratorConfig(), emptyMap(), one.mapNotNull { it.document }, "env-a"), one, null))

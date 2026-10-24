@@ -211,14 +211,17 @@ object OrchestratorSettingsSync {
     data class Plan(val upsert: JsonObject?, val delete: List<String>)
 
     /**
-     * The writes for [merge] against the machine's [tasks]: the result goes to the task with the smallest id when it
-     * differs from the document or when there was more than one task, and the others are deleted. With no task,
-     * [newTask] says where to make one; without it nothing is written.
+     * The writes for [merge] against the machine's [tasks]: the result goes to the readable task with the smallest id
+     * when it differs from the document or when more than one task was read, and the other readable ones are deleted.
+     * A task this client can't read may come from a newer version, so it is never overwritten or deleted, and with
+     * only unreadable tasks nothing is written. With no task at all, [newTask] says where to make one.
      */
     fun plan(merge: Merge, tasks: List<SettingsTask>, newTask: NewTask?): Plan {
         val none = Plan(null, emptyList())
-        val doc = merge.write ?: merge.merged.takeIf { tasks.size > 1 && it.settings.isNotEmpty() } ?: return none
-        val keep = tasks.firstOrNull()
+        val readable = tasks.filter { it.document != null }
+        if (readable.isEmpty() && tasks.isNotEmpty()) return none
+        val doc = merge.write ?: merge.merged.takeIf { readable.size > 1 && it.settings.isNotEmpty() } ?: return none
+        val keep = readable.firstOrNull()
         val upsert = if (keep != null) {
             Commands.upsertScheduledTask(keep.id, TITLE, doc.prompt, false, EVERY_MS, keep.projectId, keep.workspaceStrategy,
                 keep.modelSelection, keep.runtimeMode, keep.interactionMode, CREATION_SOURCE)
@@ -227,7 +230,7 @@ object OrchestratorSettingsSync {
             Commands.upsertScheduledTask(null, TITLE, doc.prompt, false, EVERY_MS, newTask.projectId, buildJsonObject { put("type", "root") },
                 newTask.modelSelection.toJson(), "approval-required", "default", CREATION_SOURCE)
         }
-        return Plan(upsert, tasks.drop(1).map { it.id })
+        return Plan(upsert, readable.drop(1).map { it.id })
     }
 
     /** The spec's `creationSource`, the same on every client so the task looks the same wherever it was made. */
