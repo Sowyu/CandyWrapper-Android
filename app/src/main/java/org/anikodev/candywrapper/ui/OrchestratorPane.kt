@@ -74,7 +74,7 @@ import org.anikodev.candywrapper.core.orchestrator.ChatItem
 import org.anikodev.candywrapper.core.orchestrator.CrewCard
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorChat
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorNeed
-import org.anikodev.candywrapper.core.stash.NewStashImage
+import org.anikodev.candywrapper.core.stash.Restored
 import org.anikodev.candywrapper.core.stash.StashEntry
 import org.anikodev.candywrapper.core.sync.ConnectionState
 import org.anikodev.candywrapper.core.sync.EnvironmentSession
@@ -102,7 +102,7 @@ data class OrchestratorPaneState(
     val files: List<PickedFile> = emptyList(),
     val busy: String? = null,
     val error: String? = null,
-    /** The prompt stash, shared with every thread's composer, and whether its list is open over the composer. */
+    /** The Orchestrator's own stash, synced with the other devices, and whether its list is open over the composer. */
     val stashed: List<StashEntry> = emptyList(),
     val stashOpen: Boolean = false,
 )
@@ -181,13 +181,11 @@ fun OrchestratorScreen(graph: AppGraph, nav: Navigator) {
         }
     }
 
-    // The prompt stash, the same one the thread composers use (ThreadScreen.kt). It stays on this phone.
-    // TODO(sync): the Mac keeps the composer draft per device (orchestrator.md, "Settings on every device"); if it
-    // syncs an Orchestrator stash later, follow the format it documents there.
-    val stashed by graph.stash.entries.collectAsStateWithLifecycle()
+    // The Orchestrator's stash: text only, in its config, so it syncs through the settings document as stash.<id>
+    // keys (CandyWrapper docs/orchestrator.md, "Settings on every device"). The thread composers' stash is another one.
+    val config by graph.orchestratorStore.config.collectAsStateWithLifecycle()
+    val stashed = remember(config.stash) { config.stash.map { it.asStashEntry() } }
     var stashOpen by remember { mutableStateOf(false) }
-
-    suspend fun draftImages(picked: List<PickedFile>) = picked.map { NewStashImage(it.name, it.mimeType, readPick(context, it)) }
 
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_IMAGES)) { uris ->
         for (uri in uris) if (pendingImages.size < MAX_IMAGES) describePick(context, uri)?.let { if (pendingImages.none { f -> f.uri == uri }) pendingImages += it }
@@ -228,29 +226,26 @@ fun OrchestratorScreen(graph: AppGraph, nav: Navigator) {
             dismissError = { error = null },
             stash = {
                 val text = graph.orchestratorDraft.value.value.orEmpty().trim()
-                val files = pendingImages.toList()
-                if (text.isNotEmpty() || files.isNotEmpty()) act(null) {
-                    withContext(Dispatchers.IO) { graph.stash.stash(text, draftImages(files)) }
-                    // Cleared only once the entry is on disk, so a failed write keeps the draft.
-                    graph.orchestratorDraft.set(null)
-                    pendingImages.removeAll(files)
+                when {
+                    text.isEmpty() -> {}
+                    // Images live in local files or day-long uploads, which don't travel in the settings document.
+                    pendingImages.isNotEmpty() -> error = "The Orchestrator's stash keeps text only. Send or remove the images first."
+                    else -> {
+                        graph.orchestratorStore.update { it.stashing(text, System.currentTimeMillis()) }
+                        graph.orchestratorDraft.set(null)
+                    }
                 }
             },
             toggleStash = { stashOpen = !stashOpen },
             restoreStashed = { entry, swap ->
                 val text = graph.orchestratorDraft.value.value.orEmpty().trim()
-                val files = pendingImages.toList()
                 stashOpen = false
-                act(null) {
-                    val restored = withContext(Dispatchers.IO) {
-                        if (swap) graph.stash.swap(entry.id, text, draftImages(files)) else graph.stash.restore(entry.id)
-                    } ?: return@act
-                    graph.orchestratorDraft.set(restored.into(text, swap).ifEmpty { null })
-                    if (swap) pendingImages.removeAll(files)
-                    for (img in restored.images) if (pendingImages.size < MAX_IMAGES) pendingImages += PickedFile(Uri.fromFile(img.file), img.name, img.mimeType, img.sizeBytes)
+                if (graph.orchestratorStore.config.value.stash.any { it.id == entry.id }) {
+                    graph.orchestratorStore.update { c -> c.unstashing(entry.id).let { if (swap && text.isNotEmpty()) it.stashing(text, System.currentTimeMillis()) else it } }
+                    graph.orchestratorDraft.set(Restored(entry.prompt, emptyList()).into(text, swap).ifEmpty { null })
                 }
             },
-            deleteStashed = { e -> act(null) { withContext(Dispatchers.IO) { graph.stash.delete(e.id) } } },
+            deleteStashed = { e -> graph.orchestratorStore.update { it.unstashing(e.id) } },
         )
     }
     val connection = session?.state?.collectAsStateWithLifecycle()?.value
@@ -368,7 +363,7 @@ private fun BoxScope.Chat(state: OrchestratorPaneState, actions: PaneActions) {
         }
         state.error?.let { Alert(it, NoticeTone.ERROR, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), action = "Dismiss", onAction = actions.dismissError) }
         if (state.stashOpen && pending == null) StashList(
-            state.stashed, wallClock(), canSwap = state.draft.isNotBlank() || state.files.isNotEmpty(),
+            state.stashed, wallClock(), canSwap = state.draft.isNotBlank() && state.files.isEmpty(),
             onRestore = { actions.restoreStashed(it, false) },
             onSwap = { actions.restoreStashed(it, true) },
             onDelete = actions.deleteStashed,
@@ -541,7 +536,8 @@ private fun ChatComposer(state: OrchestratorPaneState, actions: PaneActions) {
         state.busy?.takeIf { it.isNotEmpty() }?.let { Txt(it, CandyType.xs, c.mutedForeground, modifier = Modifier.padding(start = 48.dp, bottom = 4.dp)) }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             IconButton(Icons.Plus, "Attach images", enabled = !locked, box = 36.dp, onClick = actions.attach)
-            val canStash = !locked && state.busy == null && (state.draft.isNotBlank() || state.files.isNotEmpty())
+            // Text only: a draft with images can't be stashed (the tap says why).
+            val canStash = !locked && state.busy == null && state.draft.isNotBlank()
             StashButton(state.stashed.size, canStash, !locked, actions.stash, actions.toggleStash)
             val shape = RoundedCornerShape(20.dp)
             val paste = actions.paste

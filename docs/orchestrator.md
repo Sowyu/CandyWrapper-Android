@@ -33,6 +33,8 @@ The phone and the Mac share the Orchestrator's settings through one disabled sch
 4. A local edit goes up a second after the last change. Its own write comes back on the subscription and merges to nothing, so nothing loops.
 5. After you move the Orchestrator to another machine on the phone, the old machine's document gets the new machine's id too.
 
+The Orchestrator composer's stash rides in the same document, one `stash.<id>` key per prompt, as the Mac's format says. A restore or delete writes null to its key, a null older than 30 days goes, and a 21st prompt pushes the oldest out as null. It holds text only, so a draft with images can't be stashed. The thread composers' stash is separate and stays on the phone.
+
 The phone keeps "while closed" off as 0, and the document as null. The relay and discovery only look at tasks whose prompt is the "while closed" check, so the settings task never decides who relays. The phone has no scheduled-task list to hide it from.
 
 ## Two apps, one Orchestrator
@@ -93,7 +95,7 @@ In the background the phone relays nothing, polls nothing and sets no timers: th
 | The typing bubble animates while the turn runs | The dot grid on the shared second ticker | The app's single-ticker rule |
 | Needs you and Overview cover the Orchestrator's machine | The same | Phase 4 on the Mac covers every machine |
 | Unsent images survive leaving the pane | The same, in memory only | As on the Mac |
-| The composer's Stash button with its count, the stash list, restore and swap | The same button and list as a thread's composer, sharing the one stash on the phone | T3 keeps one stash for every composer. It stays on the device until the Mac documents a synced Orchestrator stash in its "Settings on every device" |
+| The composer's Stash pill with its count, the list, restore and delete | The thread composer's Stash button and list, with swap too | The same synced stash. Delete asks nothing, as a thread stash's delete on the phone |
 
 ## Bots
 
