@@ -75,6 +75,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.anikodev.candywrapper.core.model.ModelSelection
@@ -92,7 +96,7 @@ data class PickedFile(val uri: Uri, val name: String, val mimeType: String, val 
 }
 
 /** The composer's menus. */
-enum class Picker { MODEL, OPTIONS, ACCESS, SEND }
+enum class Picker { MODEL, ACCESS, SEND }
 
 /** T3's runtime mode labels and descriptions (the access mode picker). */
 fun runtimeModeLabel(mode: String) = when (mode) {
@@ -189,8 +193,8 @@ suspend fun readPick(context: Context, file: PickedFile): ByteArray = withContex
 
 /**
  * T3's composer (ChatComposer.tsx): a `rounded-[20px]` card on `--card` with the prompt on top
- * and the run controls under it: model with its provider glyph, effort, access, plan mode, then
- * attach and the round send button. Each control opens T3's menu above it. While a run is active
+ * and the run controls under it: attach, stash, access and plan mode, then the round send button.
+ * The model and its effort sit in one pill under the card, whose menu holds both. Each control opens T3's menu above it. While a run is active
  * an empty prompt turns send into a red Stop; a typed message queues or steers (long press).
  *
  * [locked] keeps the card but disables it, with T3's "Resolve this approval request to continue".
@@ -222,6 +226,8 @@ fun Composer(
     initialMenu: Picker? = null,
     trayAbove: Boolean = false,
     onStash: (() -> Unit)? = null,
+    stashCount: Int = 0,
+    onOpenStash: (() -> Unit)? = null,
     onPaste: ((List<Uri>) -> Unit)? = null,
     workspace: String? = null,
     canCompact: Boolean = false,
@@ -332,44 +338,13 @@ fun Composer(
             )
             BoxWithConstraints(Modifier.fillMaxWidth()) {
             // T3's resting strip shows every control that fits; on a phone mode and access move into ⋯ (CompactComposerControlsMenu).
+            // The model and its effort sit in the pill under the card, so the strip keeps attach and stash at the left, ⋯ and send at the right.
             val compact = maxWidth < 520.dp
             Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 8.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                    Box {
-                        val (glyph, brandTint) = providerIcon(provider?.driver)
-                        // Redesign draws Claude's spark white, like the rest of its chips.
-                        val glyphTint = if (c.redesign && brandTint == Color.Unspecified) c.foreground else brandTint
-                        SelectChip(
-                            modelLabel(server, settings.model), icon = glyph, iconTint = glyphTint, description = "Model", enabled = server.providers.isNotEmpty() && locked == null,
-                            open = menu == Picker.MODEL, labelMax = if (compact) 112.dp else 160.dp, chevron = !compact,
-                        ) { menu = Picker.MODEL }
-                        ModelMenu(menu == Picker.MODEL, server, settings, onModel) { menu = null }
-                    }
-                    optionLabel(server, settings.model)?.let { label ->
-                        if (!compact) ControlDivider()
-                        Box {
-                            SelectChip(label, icon = Icons.Brain, description = "Model options", enabled = locked == null, open = menu == Picker.OPTIONS, chevron = !compact) { menu = Picker.OPTIONS }
-                            OptionsMenu(menu == Picker.OPTIONS, server, settings, onModel) { menu = null }
-                        }
-                    }
+                    IconButton(Icons.Paperclip, "Attach images", enabled = connected && busy == null && locked == null, size = 18.dp, onClick = onAttach)
+                    if (onStash != null) StashButton(stashCount, canStash, locked == null, onStash, onOpenStash)
                     if (compact) {
-                        Box {
-                            IconButton(Icons.Ellipsis, "More composer controls", enabled = locked == null, size = 16.dp, box = 32.dp) { menu = Picker.ACCESS }
-                            Menu(menu == Picker.ACCESS, { menu = null }, side = MenuSide.ABOVE, minWidth = 260.dp) {
-                                // On a phone the stash button would push ⋯ out of the strip, so Stash lives here.
-                                if (onStash != null) {
-                                    MenuItem("Stash prompt", Icons.Bookmark, detail = "Keep it for later and clear the composer", enabled = canStash) { menu = null; onStash() }
-                                    MenuSeparator()
-                                }
-                                if (onTogglePlan != null) {
-                                    MenuLabel("Mode")
-                                    MenuItem("Chat", selected = settings.interactionMode != "plan") { menu = null; if (settings.interactionMode == "plan") onTogglePlan() }
-                                    MenuItem("Plan", selected = settings.interactionMode == "plan") { menu = null; if (settings.interactionMode != "plan") onTogglePlan() }
-                                    MenuSeparator()
-                                }
-                                AccessItems(server, settings, plain = true) { mode -> menu = null; onRuntimeMode(mode) }
-                            }
-                        }
                         if (settings.interactionMode == "plan" && onTogglePlan != null) PlanToggle(true, locked == null, onTogglePlan)
                     } else {
                         ControlDivider()
@@ -383,8 +358,20 @@ fun Composer(
                         if (onTogglePlan != null) PlanToggle(settings.interactionMode == "plan", locked == null, onTogglePlan)
                     }
                 }
-                if (onStash != null && !compact) IconButton(Icons.Bookmark, "Stash prompt", enabled = canStash, size = 18.dp, onClick = onStash)
-                IconButton(Icons.Paperclip, "Attach images", enabled = connected && busy == null && locked == null, size = 18.dp, onClick = onAttach)
+                if (compact) {
+                    Box {
+                        IconButton(Icons.Ellipsis, "More composer controls", enabled = locked == null, size = 16.dp, box = 32.dp) { menu = Picker.ACCESS }
+                        Menu(menu == Picker.ACCESS, { menu = null }, side = MenuSide.ABOVE, alignEnd = true, minWidth = 260.dp) {
+                            if (onTogglePlan != null) {
+                                MenuLabel("Mode")
+                                MenuItem("Chat", selected = settings.interactionMode != "plan") { menu = null; if (settings.interactionMode == "plan") onTogglePlan() }
+                                MenuItem("Plan", selected = settings.interactionMode == "plan") { menu = null; if (settings.interactionMode != "plan") onTogglePlan() }
+                                MenuSeparator()
+                            }
+                            AccessItems(server, settings, plain = true) { mode -> menu = null; onRuntimeMode(mode) }
+                        }
+                    }
+                }
                 val stop = running && canStop && text.isBlank() && files.isEmpty()
                 Box {
                     SendButton(stop, canSend, onClick = if (stop) onStop else onSend, onLongClick = if (onQueue != null && !stop && canSend) ({ menu = Picker.SEND }) else null)
@@ -397,10 +384,107 @@ fun Composer(
             }
             }
         }
-        // Redesign: the machine row and the waiting pill float under the composer, inside its corners.
-        if (footer != null && c.redesign) Row(Modifier.fillMaxWidth().padding(horizontal = Pill.inset), verticalAlignment = Alignment.CenterVertically, content = footer)
+        // The row under the card: the model pill, then under Redesign the machine row and the waiting pill, inside its corners.
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val narrow = maxWidth < 360.dp
+            Row(Modifier.fillMaxWidth().padding(horizontal = if (c.redesign) Pill.inset else 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box {
+                    ModelPill(
+                        server, settings, provider?.driver, enabled = server.providers.isNotEmpty() && locked == null, open = menu == Picker.MODEL,
+                        nameMax = if (narrow) 72.dp else 120.dp,
+                    ) { menu = Picker.MODEL }
+                    ModelMenu(menu == Picker.MODEL, server, settings, onModel) { menu = null }
+                }
+                if (footer != null && c.redesign) footer()
+            }
+        }
         // Real progress only: "Uploading 2 of 3", "Sending", "Stopping".
         if (busy != null) Txt(busy, CandyType.xs, c.mutedForeground, modifier = Modifier.padding(start = 12.dp))
+    }
+}
+
+/** A model's name without its maker, for the pill: "Claude Opus 5.5" reads "Opus 5.5". */
+fun shortModelName(name: String) = name.removePrefix("Claude ")
+
+/**
+ * The model pill under the composer: the provider's glyph, the model's short name and its effort,
+ * "Opus 5.5 · High". The name truncates first; the effort always shows. A tap opens the model menu,
+ * which also holds the effort. Redesign floats it as a frosted pill; T3's look keeps the strip's
+ * ghost chip.
+ */
+@Composable
+private fun ModelPill(server: ServerInfo, settings: ComposerSettings, driver: String?, enabled: Boolean, open: Boolean, nameMax: Dp, onClick: () -> Unit) {
+    val c = Candy.colors
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val (glyph, brandTint) = providerIcon(driver)
+    // Redesign draws Claude's spark white, like the rest of its chips.
+    val tint = if (c.redesign && brandTint == Color.Unspecified) c.foreground else brandTint
+    val name = shortModelName(modelLabel(server, settings.model))
+    val effort = optionLabel(server, settings.model)
+    val text = when {
+        !enabled -> c.mutedForeground.copy(alpha = 0.64f)
+        pressed || open -> c.foreground
+        c.redesign -> c.secondaryLabel
+        else -> c.mutedForeground
+    }
+    val shape = RoundedCornerShape(Radius.md)
+    Box(
+        Modifier.heightIn(min = 44.dp).clickable(source, null, enabled = enabled, role = Role.Button, onClickLabel = "Choose model and effort", onClick = onClick)
+            .semantics { contentDescription = "Model" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(
+            Modifier.height(if (c.redesign) Pill.height else 32.dp)
+                .let { if (c.redesign) it.floating(shape) else it.clip(shape).background(if (pressed || open) c.accent else Color.Transparent) }
+                .padding(horizontal = if (c.redesign) 10.dp else 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(glyph, tint, 14.dp)
+            Txt(name, CandyType.sm, text, maxLines = 1, modifier = Modifier.widthIn(max = nameMax))
+            if (effort != null) {
+                Txt("·", CandyType.sm, text.copy(alpha = text.alpha * 0.6f), maxLines = 1)
+                Txt(effort, CandyType.sm, text, maxLines = 1)
+            }
+        }
+    }
+}
+
+/**
+ * The stash's bookmark in the strip (T3's stash shortcut). A tap stashes the draft; with nothing to
+ * stash, or on a long press, it opens the stash list. A count badge shows while prompts wait.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun StashButton(count: Int, canStash: Boolean, enabled: Boolean, onStash: () -> Unit, onOpen: (() -> Unit)?) {
+    val c = Candy.colors
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val tapOpens = !canStash && count > 0 && onOpen != null
+    val active = enabled && (canStash || tapOpens)
+    Box(
+        Modifier.size(44.dp).combinedClickable(
+            source, null,
+            enabled = active, role = Role.Button,
+            onClickLabel = if (tapOpens) "Open stash" else "Stash prompt",
+            onLongClickLabel = if (onOpen != null) "Open stash" else null,
+            onLongClick = onOpen,
+            onClick = if (tapOpens) onOpen else onStash,
+        ).semantics { contentDescription = if (count > 0) "Stash prompt, $count stashed" else "Stash prompt" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size(36.dp).pressScale(source).clip(RoundedCornerShape(Radius.md)).background(if (pressed) c.accent else Color.Transparent),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Bookmark, if (active) c.iconMuted else c.iconMuted.copy(alpha = 0.64f), 18.dp) }
+        if (count > 0) {
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(top = 5.dp, end = 3.dp).heightIn(min = 16.dp).widthIn(min = 16.dp)
+                    .clip(CircleShape).background(c.primary).padding(horizontal = 4.dp),
+                contentAlignment = Alignment.Center,
+            ) { Txt(if (count > 99) "99+" else "$count", CandyType.xxs.merge(TextStyle(fontWeight = FontWeight.Medium, fontFeatureSettings = "tnum")), c.primaryForeground, maxLines = 1) }
+        }
     }
 }
 
@@ -531,28 +615,27 @@ private fun ModelMenu(open: Boolean, server: ServerInfo, settings: ComposerSetti
                 }
             }
         }
+        OptionItems(server, settings, onModel, onDismiss)
     }
 }
 
-/** The traits menu (41-traits-picker): each of the model's options, effort first. */
+/** The traits (41-traits-picker) under the models in the model menu: each of the model's options, effort first. */
 @Composable
-private fun OptionsMenu(open: Boolean, server: ServerInfo, settings: ComposerSettings, onModel: (ModelSelection) -> Unit, onDismiss: () -> Unit) {
-    val model = settings.model
-    val info = model?.let { server.provider(it.instanceId)?.model(it.model) }
-    Menu(open, onDismiss, side = MenuSide.ABOVE, minWidth = 220.dp) {
-        for ((i, d) in info?.options.orEmpty().withIndex()) {
-            if (i > 0) MenuSeparator()
-            MenuLabel(d.label)
-            if (d.type == "boolean") {
-                val on = model!!.option(d.id)?.flag == true
-                MenuItem(if (on) "On" else "Off", trailing = { Switch(on) }) { onModel(model.withOption(OptionValue(d.id, flag = !on))) }
-            } else {
-                val current = model!!.option(d.id)?.text ?: d.defaultChoice?.id
-                for (choice in d.choices) {
-                    MenuItem(choice.label, selected = choice.id == current, trailing = if (choice.isDefault) ({ DefaultTag() }) else null) {
-                        onModel(model.withOption(OptionValue(d.id, text = choice.id)))
-                        onDismiss()
-                    }
+private fun OptionItems(server: ServerInfo, settings: ComposerSettings, onModel: (ModelSelection) -> Unit, onDismiss: () -> Unit) {
+    val model = settings.model ?: return
+    val options = server.provider(model.instanceId)?.model(model.model)?.options.orEmpty()
+    for (d in options) {
+        MenuSeparator()
+        MenuLabel(d.label)
+        if (d.type == "boolean") {
+            val on = model.option(d.id)?.flag == true
+            MenuItem(if (on) "On" else "Off", trailing = { Switch(on) }) { onModel(model.withOption(OptionValue(d.id, flag = !on))) }
+        } else {
+            val current = model.option(d.id)?.text ?: d.defaultChoice?.id
+            for (choice in d.choices) {
+                MenuItem(choice.label, selected = choice.id == current, trailing = if (choice.isDefault) ({ DefaultTag() }) else null) {
+                    onModel(model.withOption(OptionValue(d.id, text = choice.id)))
+                    onDismiss()
                 }
             }
         }
@@ -637,6 +720,7 @@ private fun RedesignModelPicker(open: Boolean, server: ServerInfo, settings: Com
                         onDismiss()
                     }
                 }
+                OptionItems(server, settings, onModel, onDismiss)
             }
         }
     }

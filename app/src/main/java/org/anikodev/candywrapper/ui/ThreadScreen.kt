@@ -309,8 +309,6 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                     onDelete = { e -> act(null) { withContext(Dispatchers.IO) { graph.stash.delete(e.id) } } },
                     onClose = { stashOpen = false },
                 )
-            } else if (pending == null) {
-                StashTab(stashed.size) { stashOpen = true }
             }
             when {
                 pending != null && pending.isQuestion -> QuestionPanel(pending, busy != null || !live,
@@ -348,8 +346,10 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                     pending != null -> APPROVAL_LOCK
                     else -> null
                 },
-                trayAbove = pending != null || state.queued.isNotEmpty() || stashOpen || stashed.isNotEmpty(),
+                trayAbove = pending != null || state.queued.isNotEmpty() || stashOpen,
                 onStash = ::stashDraft,
+                stashCount = stashed.size,
+                onOpenStash = { stashOpen = !stashOpen },
                 onPaste = { uris -> scope.receivePasted(context, uris, MAX_PICKS - files.size) { if (files.size < MAX_PICKS) files += it } },
                 // ponytail: the project's checkout, where T3 scans the thread's worktree; read the thread's worktreePath if worktree-only commands go missing
                 workspace = project?.workspaceRoot?.ifBlank { null },

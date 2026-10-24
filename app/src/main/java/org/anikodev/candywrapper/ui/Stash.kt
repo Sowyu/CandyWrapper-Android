@@ -26,33 +26,6 @@ import androidx.compose.ui.unit.dp
 import org.anikodev.candywrapper.core.stash.StashEntry
 
 /**
- * The stash's count tab over the composer's right edge (ComposerStashBadge.tsx): the bookmark,
- * "Stash" and how many prompts wait. It hides while the stash is empty. A tap opens the list.
- */
-@Composable
-fun StashTab(count: Int, onOpen: () -> Unit) {
-    if (count == 0) return
-    val c = Candy.colors
-    val shape = RoundedCornerShape(Radius.md)
-    val redesign = c.redesign
-    // Redesign floats it as a pill inside the composer's corner, 8dp above it.
-    Box(Modifier.fillMaxWidth().padding(start = 12.dp, end = if (redesign) 12.dp + Pill.inset else 12.dp, bottom = if (redesign) Pill.gap else 6.dp), contentAlignment = Alignment.CenterEnd) {
-        Row(
-            Modifier.heightIn(min = if (redesign) Pill.height else 32.dp).let { if (redesign) it.floating(shape).clip(shape) else it.clip(shape).background(c.card).border(1.dp, c.border, shape) }
-                .clickable(role = Role.Button, onClickLabel = "Open stash", onClick = onOpen)
-                .semantics { contentDescription = "Stashed prompts: $count. Open stash." }
-                .padding(horizontal = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Icon(Icons.Bookmark, c.mutedForeground, 12.dp)
-            Txt("Stash", CandyType.xs, c.mutedForeground, maxLines = 1)
-            Txt("$count", CandyType.xsMedium.merge(TextStyle(fontFeatureSettings = "tnum")), c.foreground, maxLines = 1)
-        }
-    }
-}
-
-/**
  * The stash list over the composer (ComposerStashMenu.tsx): a header that closes it, then one row
  * per prompt, newest first, with the snippet, its images, how long ago, and delete. A tap restores
  * the prompt into the composer, after any text already there. With a draft in the composer, swap

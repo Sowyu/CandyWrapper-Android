@@ -39,13 +39,12 @@ class RedesignGlassShotTest {
                 CompositionLocalProvider(LocalProjectIcons provides Fixtures.icons, LocalArtStore provides store, LocalImages provides ImageShotTest.FakeImages) {
                     AppShell(DrawerState(open = false), sidebar = {}) {
                         ThreadShotTest.ThreadScreenFixture(ThreadFixtures.state.copy(running = true, queued = ThreadFixtures.queued)) {
-                            StashTab(3) {}
                             QueuedList(ThreadFixtures.queued, canSteer = true, onSteer = {}, onCancel = {})
                             Composer(
                                 text = "Match this layout", onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"),
                                 server = ThreadFixtures.server, running = true, canStop = true, files = files, busy = null, error = null, connected = true,
                                 onModel = {}, onRuntimeMode = {}, onTogglePlan = null, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = {}, onSteer = {},
-                                onStop = {}, onDismissError = {}, trayAbove = true, onStash = {}, onPaste = {},
+                                onStop = {}, onDismissError = {}, trayAbove = true, onStash = {}, stashCount = 3, onOpenStash = {}, onPaste = {},
                                 footer = { DeviceRow("anika-mbp", true); WaitingPill("Waiting") { _, _ -> } },
                             )
                         }

@@ -45,7 +45,8 @@ CandyWrapper for Android copies T3 Code's desktop app, adapted to a phone. T3's 
 | The draft block, pull request and terminal badges on cards | Not built | They need data the shell does not carry here |
 | The Working section setting syncs with the desktop client settings | Settings > Sidebar > Working section, stored on the phone, off by default as in T3 and CandyWrapper | Client settings live in each client |
 | The expanded image preview dims the page | A black full-screen viewer with pinch zoom, swipe down to close, Save and Share | A phone's photo viewer conventions; there is no pointer to zoom with |
-| Stash with a keyboard shortcut; the list restores or deletes | Stash prompt in the composer's ⋯ on a phone (a bookmark button from 520dp); each row also has Swap, which stashes the draft and restores the prompt in one step | No keyboard on a phone; swap was asked for |
+| Stash with a keyboard shortcut; the list restores or deletes | A bookmark button beside attach stashes the draft; it carries the stash's count, and a long press, or a tap with nothing to stash, opens the list. Each row also has Swap, which stashes the draft and restores the prompt in one step | No keyboard on a phone; swap was asked for |
+| The model and effort chips lead the composer's control strip | One pill under the composer, "Opus 5.5 · High", whose menu lists the models and then the effort; the strip keeps attach and stash at the left, ⋯ and send at the right | The owner found the strip cluttered on a phone |
 | The stash lives in browser storage, images as data URLs | `prompt-stash/stash.json` in the app's files, replaced atomically, images as files beside it, as CandyWrapper stores them | A phone keeps images as files |
 | Add project in the thread header | Not built | Adding a project needs a folder on the computer |
 | Parking the open thread with no card left opens a new thread | Opens the empty state, with the sidebar | A phone lands in the sidebar to pick the next one |
@@ -68,7 +69,8 @@ Settings > Appearance > Redesign is CandyWrapper's Redesign theme on the Mac (in
 - `ui/RedesignKit.kt` has the pills (30dp, 8dp corners, frost, rim, shadow), the dot grid, the waiting pill, the machine row, the header pill and the provider card.
 - The glass is `Modifier.frost` in `ui/RedesignPanel.kt`, after CandyWrapper's DitherPillSurface and BackdropBlurView: a 12dp blur radius, 1.14 saturation, then the pane's fill. Pills, the composer, its trays and the stash list fill with `surfaceRaised` (dark) or `card` (light) at 62%; menus with `--popover` at 90% (PopupSurface's floating pane). Every one has the 8% rim and DitherPill's shadow. Content that scrolls under the glass, the thread, marks itself with `Modifier.backdropSource()`.
 - Settings > Appearance > Experimental Orchestrator features (Redesign only, off by default) adds the Orchestrator: the pinned sidebar row with its bot, the pane with Chat, Overview and Needs you, and Settings > Orchestrator. [orchestrator.md](orchestrator.md) has how it works on a phone, how it shares one Orchestrator with the Mac and where it differs.
-- The Stash pill rides at the top of the stack, above a request or the queue, which sit right on the composer (CandyWrapper f8ddfbf5). T3's look keeps the same order, so its tray stays joined to the composer.
+- The stash list rides at the top of the stack, above a request or the queue, which sit right on the composer (CandyWrapper f8ddfbf5). T3's look keeps the same order, so its tray stays joined to the composer.
+- The model pill leads the row under the composer, before the machine row and the waiting pill.
 
 | Mac Redesign | Here | Why |
 |---|---|---|

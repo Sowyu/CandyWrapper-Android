@@ -1,6 +1,11 @@
 package org.anikodev.candywrapper.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import org.anikodev.candywrapper.core.stash.StashEntry
 import org.anikodev.candywrapper.core.stash.StashImage
 import org.anikodev.candywrapper.core.sync.ThreadSession
@@ -27,13 +32,22 @@ class ThreadShotTest {
             ) { bottom() }
         }
 
+        /** The new-thread screen's composer, which has no stash or footer. */
+        @Composable
+        fun NewThreadComposer() = Composer(
+            text = "", onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
+            running = false, canStop = false, files = emptyList(), busy = null, error = null, connected = true,
+            onModel = {}, onRuntimeMode = {}, onTogglePlan = null, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
+            onStop = {}, onDismissError = {},
+        )
+
         /** Plan mode is off by default, so the composer shows no Plan toggle. */
         @Composable
-        fun ThreadComposer(text: String = "", locked: String? = null, running: Boolean = false, tray: Boolean = false) = Composer(
+        fun ThreadComposer(text: String = "", locked: String? = null, running: Boolean = false, tray: Boolean = false, stashCount: Int = 0) = Composer(
             text = text, onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
             running = running, canStop = running, files = emptyList(), busy = null, error = null, connected = true,
             onModel = {}, onRuntimeMode = {}, onTogglePlan = null, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
-            onStop = {}, onDismissError = {}, locked = locked, trayAbove = tray, onStash = {},
+            onStop = {}, onDismissError = {}, locked = locked, trayAbove = tray, onStash = {}, stashCount = stashCount, onOpenStash = {},
         )
     }
 
@@ -108,14 +122,17 @@ class ThreadShotTest {
     @Test fun stashLight() = stash(false)
     @Test fun stashDark() = stash(true)
 
-    /** The stash's count tab over the composer. */
-    private fun stashTab(dark: Boolean) = shot("stash-tab-phone", dark) {
-        Thread {
-            StashTab(3) {}
-            ThreadComposer(tray = true)
-        }
+    /** The stash button carries the stash's count. */
+    private fun stashCount(dark: Boolean) = shot("stash-count-phone", dark) { Thread { ThreadComposer(stashCount = 3) } }
+    @Test fun stashCountLight() = stashCount(false)
+    @Test fun stashCountDark() = stashCount(true)
+
+    /** The new-thread composer: no stash, so attach alone at the left. */
+    private fun newThreadComposer(dark: Boolean) = shot("composer-new-thread-phone", dark) {
+        Box(Modifier.fillMaxSize().background(Candy.colors.background), contentAlignment = Alignment.BottomCenter) { NewThreadComposer() }
     }
-    @Test fun stashTabLight() = stashTab(false)
+    @Test fun newThreadComposerLight() = newThreadComposer(false)
+    @Test fun newThreadComposerDark() = newThreadComposer(true)
 
     @Test fun planModeLight() = planMode(false)
     @Test fun planModeDark() = planMode(true)
