@@ -175,11 +175,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
     var stashOpen by remember { mutableStateOf(false) }
 
     fun takeIn(restored: Restored, replace: Boolean) {
-        draft = when {
-            replace || draft.isBlank() -> restored.prompt
-            restored.prompt.isEmpty() -> draft
-            else -> draft.trimEnd() + "\n\n" + restored.prompt
-        }
+        draft = restored.into(draft, replace)
         if (replace) files.clear()
         for (img in restored.images) if (files.size < MAX_PICKS) files += PickedFile(Uri.fromFile(img.file), img.name, img.mimeType, img.sizeBytes)
     }

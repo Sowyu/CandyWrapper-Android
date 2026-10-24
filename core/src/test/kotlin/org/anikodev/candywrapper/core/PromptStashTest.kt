@@ -11,6 +11,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.anikodev.candywrapper.core.stash.NewStashImage
 import org.anikodev.candywrapper.core.stash.PromptStash
+import org.anikodev.candywrapper.core.stash.Restored
 import org.anikodev.candywrapper.core.stash.StashEntry
 
 /** The prompt stash: newest first, 20 at most, images as files, every change written atomically. */
@@ -110,5 +111,16 @@ class PromptStashTest {
         assertEquals("fix the inset on the card", StashEntry("a", 0, "  fix the\n inset   on the card ").snippet)
         assertEquals("x".repeat(90) + "…", StashEntry("a", 0, "x".repeat(120)).snippet)
         assertEquals("(empty)", StashEntry("a", 0, " ").snippet)
+    }
+
+    @Test
+    fun aRestoredPromptGoesAfterTheDraftOrReplacesItOnASwap() {
+        val r = Restored("stashed", emptyList())
+        assertEquals("stashed", r.into("", replace = false))
+        assertEquals("stashed", r.into("  \n", replace = false))
+        assertEquals("my draft\n\nstashed", r.into("my draft \n", replace = false))
+        assertEquals("stashed", r.into("my draft", replace = true))
+        // An image-only entry leaves the text alone.
+        assertEquals("my draft", Restored("", emptyList()).into("my draft", replace = false))
     }
 }

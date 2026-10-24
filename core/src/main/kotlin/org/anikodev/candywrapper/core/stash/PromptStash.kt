@@ -36,7 +36,17 @@ class NewStashImage(val name: String, val mimeType: String, val bytes: ByteArray
 /** A restored image, moved out of the stash into [file] so the composer can send it. */
 data class RestoredImage(val file: File, val name: String, val mimeType: String, val sizeBytes: Long)
 
-data class Restored(val prompt: String, val images: List<RestoredImage>)
+data class Restored(val prompt: String, val images: List<RestoredImage>) {
+    /**
+     * The composer's text once this prompt comes back into [draft]: after the draft with a blank line
+     * between, or in its place when [replace] (a swap, whose draft went into the stash).
+     */
+    fun into(draft: String, replace: Boolean): String = when {
+        replace || draft.isBlank() -> prompt
+        prompt.isEmpty() -> draft
+        else -> draft.trimEnd() + "\n\n" + prompt
+    }
+}
 
 /**
  * The prompt stash (T3 `promptStashStore`, CandyWrapper `PromptStashStore`): newest first, at most
