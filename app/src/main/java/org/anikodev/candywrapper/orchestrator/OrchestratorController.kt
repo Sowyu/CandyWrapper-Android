@@ -41,6 +41,7 @@ import org.anikodev.candywrapper.core.orchestrator.OrchestratorModelRow
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorNeed
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorOverview
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorRelay
+import org.anikodev.candywrapper.core.orchestrator.OrchestratorSettingsSync
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorReply
 import org.anikodev.candywrapper.core.orchestrator.ProjectionMessage
 import org.anikodev.candywrapper.core.orchestrator.RelayHost
@@ -128,6 +129,14 @@ class OrchestratorController(private val graph: AppGraph) {
     private var lastUserRow: String? = null
     private val _undoable = MutableStateFlow<Set<String>>(emptySet())
     val undoable: StateFlow<Set<String>> = _undoable
+    /** The settings documents last seen on its machine, by prompt; null until that machine's task list loads. */
+    private var seenSettings: List<String>? = null
+    /** The machine the settings sync with, to tell when it moved. */
+    private var settingsMachine: String? = null
+    /** The stamps last merged, to tell your edits from the other devices'. */
+    private var syncedStamps: Map<String, OrchestratorSettingsSync.Stamp> = emptyMap()
+    private var settingsChain: Job? = null
+    private var settingsPush: Job? = null
 
     fun start() {
         val active = combine(store.config.map { it.enabled }, graph.redesign.value) { on, redesign -> on && redesign }.distinctUntilChanged()
@@ -151,7 +160,7 @@ class OrchestratorController(private val graph: AppGraph) {
             }
         }
         launch { foreground.collect { evaluate() } }
-        launch { store.config.collect { evaluate() } }
+        launch { store.config.collect { settingsEdited(); evaluate() } }
         launch {
             graph.environments.sessions.flatMapLatest { list -> if (list.isEmpty()) flowOf(Unit) else combine(list.map { it.state }) { } }.collect { evaluate() }
         }
@@ -181,6 +190,9 @@ class OrchestratorController(private val graph: AppGraph) {
         flushJob?.cancel()
         turnWatch.reset()
         relaying = false
+        settingsPush?.cancel()
+        seenSettings = null
+        settingsMachine = null
         _ui.value = OrchestratorUi()
     }
 
@@ -231,6 +243,7 @@ class OrchestratorController(private val graph: AppGraph) {
             discovered -= home
             return evaluate()
         }
+        watchSettings(home)
         manageTasks(home)
         if (home != null && machine == null && shell?.live == true && home in tasks && home !in discovered && !discovering) {
             discovered += home
@@ -266,15 +279,20 @@ class OrchestratorController(private val graph: AppGraph) {
         // A new connection starts unknown: a list from before could say "on" after the Mac turned it off.
         tasks.remove(home)
         tasksError = null
+        // The first list on a connection syncs, so an edit that couldn't go up while offline goes up now.
+        seenSettings = null
         taskSubscription = conn.subscribe("scheduledTasks.subscribe", JsonObject(emptyMap()), onEnd = { error ->
             if (error != null) scope.launch {
                 if (taskConnection === conn) { tasksError = error.message; publish() }
             }
         }) { values ->
-            val list = CheckTask.list(values.lastOrNull() as? JsonObject)
+            val json = values.lastOrNull() as? JsonObject
+            val list = CheckTask.list(json)
+            val settings = OrchestratorSettingsSync.tasks(json)
             scope.launch {
                 if (taskConnection !== conn) return@launch
                 tasks[home] = list
+                settingsListChanged(home, settings)
                 evaluate()
             }
         }
@@ -388,7 +406,8 @@ class OrchestratorController(private val graph: AppGraph) {
      */
     private fun adopt(home: String, thread: OrchThread) {
         if (config.machines[home] != null) return
-        if (config.name == OrchestratorConfig.DEFAULT_NAME && thread.title != config.name) store.update { it.copy(name = thread.title) }
+        // Only a name no device ever set: the shared settings' name wins over the thread's title.
+        if (config.name == OrchestratorConfig.DEFAULT_NAME && thread.title != config.name && "name" !in store.stamps) store.update { it.copy(name = thread.title) }
         val brief = renderBrief(home)
         store.update { it.copy(machines = it.machines + (home to OrchestratorMachine(thread.id, brief.second))) }
         Timeline.mark("orchestrator.adopted", label(home))
@@ -628,6 +647,75 @@ class OrchestratorController(private val graph: AppGraph) {
         _undoable.value = memoryUndo.keys.toSet()
     }
 
+    // Settings on every device
+
+    /** Follows the machine the settings live on; after you move it, the old machine's document names the new one. */
+    private fun watchSettings(home: String?) {
+        if (home == null || home == settingsMachine) return
+        val old = settingsMachine
+        // Only a machine whose list was read, so sessions arriving in another order at boot leave no stray task.
+        val read = seenSettings != null
+        settingsMachine = home
+        seenSettings = null
+        if (old != null && read && store.stamps["environmentId"]?.by == store.device) syncSettings(old)
+    }
+
+    /**
+     * The list's first load, or a write from another device. Their values apply at once, before discovery or the
+     * brief reads them; a write waits for a fresh list. Echoes of this phone's own write merge to nothing.
+     */
+    private fun settingsListChanged(home: String, found: List<OrchestratorSettingsSync.SettingsTask>) {
+        val prompts = found.map { it.prompt }.sorted()
+        if (prompts == seenSettings) return
+        seenSettings = prompts
+        val m = store.merge { c, s -> OrchestratorSettingsSync.merge(c, s, found.mapNotNull { it.document }, home, home()) }
+        syncedStamps = m.stamps
+        if (m.write != null || found.size > 1) syncSettings(home)
+    }
+
+    /** Your edit goes up a second after the last change, so typing in the prompt writes once. */
+    private fun settingsEdited() {
+        val device = store.device
+        if (store.stamps.none { (key, stamp) -> stamp.by == device && syncedStamps[key] != stamp }) return
+        settingsPush?.cancel()
+        settingsPush = scope.launch {
+            delay(SETTINGS_DEBOUNCE_MS)
+            home()?.let(::syncSettings)
+        }
+    }
+
+    /** One sync at a time, so writes land in order. */
+    private fun syncSettings(env: String) {
+        val previous = settingsChain
+        settingsChain = scope.launch {
+            previous?.join()
+            runCatching { pushSettings(env) }.onFailure { Timeline.mark("orchestrator.settings.failed", it.message?.take(120)) }
+        }
+    }
+
+    /** Merges [env]'s settings documents with this phone's, then writes the result back when it differs. */
+    private suspend fun pushSettings(env: String) {
+        if (!running) return
+        val session = session(env) ?: return
+        val json = session.request("scheduledTasks.list") as? JsonObject ?: return
+        if (!running) return
+        val found = OrchestratorSettingsSync.tasks(json)
+        val m = store.merge { c, s -> OrchestratorSettingsSync.merge(c, s, found.mapNotNull { it.document }, env, home()) }
+        syncedStamps = m.stamps
+        val plan = OrchestratorSettingsSync.plan(m, found, if (found.isEmpty()) newSettingsTask(env) else null)
+        session.request("scheduledTasks.upsert", plan.upsert ?: return)
+        // Two devices may each have made one; every side keeps the smallest id and deletes the rest.
+        for (id in plan.delete) runCatching { session.request("scheduledTasks.delete", Commands.deleteScheduledTask(id)) }
+        Timeline.mark("orchestrator.settings.written", label(env))
+    }
+
+    /** A machine with no settings task gets one in the home project, else its first, on the default model row. */
+    private fun newSettingsTask(env: String): OrchestratorSettingsSync.NewTask? {
+        val projects = shells[env]?.projects ?: session(env)?.threads?.value?.projects.orEmpty()
+        val project = projects.firstOrNull { it.id == config.homeProjectId } ?: projects.firstOrNull() ?: return null
+        return OrchestratorSettingsSync.NewTask(project.id, ownSelection(env) ?: return null)
+    }
+
     // What the views draw
 
     private fun publish() {
@@ -666,5 +754,6 @@ class OrchestratorController(private val graph: AppGraph) {
 
     private companion object {
         const val CALL_GRACE_MS = 2_000L
+        const val SETTINGS_DEBOUNCE_MS = 1_000L
     }
 }

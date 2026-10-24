@@ -6,9 +6,9 @@ It is off by default. Settings > Appearance shows "Experimental Orchestrator fea
 
 ## Where it lives
 
-- `core/orchestrator` holds everything that decides: the config and the four default model rows (`OrchestratorConfig.kt`), the brief, its fingerprint and its Hands off list (`OrchestratorBrief.kt`), events, the ask-first rule and the 30-second batch (`OrchestratorEvents.kt`), the fenced plan, memory, digest and call blocks (`OrchestratorBlocks.kt`), the call relay with Hands off, ask-first and the worker limit checked in code (`OrchestratorRelay.kt`), who relays (`RelayOwnership.kt`), the chat items (`OrchestratorChat.kt`), the Overview and Needs you (`OrchestratorOverview.kt`) and the bots (`BotGeometry.kt`). JUnit tests mirror the Mac's `OrchestratorTests`, `OrchestratorRelayTests`, `OrchestratorChatTests` and `BotGeometryTests`, plus `RelayOwnershipTest` for the protocol below.
+- `core/orchestrator` holds everything that decides: the config and the four default model rows (`OrchestratorConfig.kt`), the brief, its fingerprint and its Hands off list (`OrchestratorBrief.kt`), events, the ask-first rule and the 30-second batch (`OrchestratorEvents.kt`), the fenced plan, memory, digest and call blocks (`OrchestratorBlocks.kt`), the call relay with Hands off, ask-first and the worker limit checked in code (`OrchestratorRelay.kt`), who relays (`RelayOwnership.kt`), the settings shared with the Mac (`OrchestratorSettingsSync.kt`), the chat items (`OrchestratorChat.kt`), the Overview and Needs you (`OrchestratorOverview.kt`) and the bots (`BotGeometry.kt`). JUnit tests mirror the Mac's `OrchestratorTests`, `OrchestratorRelayTests`, `OrchestratorChatTests` and `BotGeometryTests`, plus `RelayOwnershipTest` for the protocol below and `OrchestratorSettingsSyncTest`, ported from the Mac's `OrchestratorSettingsSyncTests`.
 - `ShellProjection` keeps an `OrchThread` per active thread (subagents too) only while the Orchestrator is on. The cache stores none of these fields, so turning it on subscribes the shell once without the cursor for a full snapshot.
-- `app/orchestrator/OrchestratorController.kt` runs it on one serial dispatcher. `data/OrchestratorStore.kt` keeps the settings in `files/orchestrator/config.json`.
+- `app/orchestrator/OrchestratorController.kt` runs it on one serial dispatcher. `data/OrchestratorStore.kt` keeps the settings in `files/orchestrator/config.json`, and this install's device id and a stamp per shared setting in `files/orchestrator/sync.json`.
 - `ui/OrchestratorRow.kt` is the pinned sidebar row, `ui/OrchestratorPane.kt` the pane, `ui/OrchestratorSettings.kt` Settings > Orchestrator and `ui/OrchestratorBot.kt` the Compose bot.
 
 ## Finding the Mac's Orchestrator
@@ -21,7 +21,19 @@ The Mac keeps its thread id only in its own defaults (`OrchestratorConfig.machin
 
 The phone never creates a second thread while one exists: Start shows only after discovery found nothing, and an adopted or started thread is remembered per machine. An archived or deleted Orchestrator is forgotten, as on the Mac.
 
-Settings are per device, as on the Mac (`decisions.md`: client settings live in each client). On adoption the phone records its own brief's fingerprint as already sent, so switching devices never rewrites the Mac's brief by itself; only a change you make on the phone (name, prompt, models, limits, Hands off, projects or machines) goes out as an "Updated brief" with your next message. The phone takes the thread's title as its name if you never named it.
+On adoption the phone records its own brief's fingerprint as already sent, so switching devices never rewrites the Mac's brief by itself; only a change you make on the phone (name, prompt, models, limits, Hands off, projects or machines) goes out as an "Updated brief" with your next message. The phone takes the thread's title as its name only if no device ever set one.
+
+## Settings on every device
+
+The phone and the Mac share the Orchestrator's settings through one disabled scheduled task titled "CandyWrapper Orchestrator settings" on the Orchestrator's machine. CandyWrapper's `docs/orchestrator.md`, "Settings on every device", is the format; `OrchestratorSettingsSync` in core is the same code as the Mac's, down to the bytes it writes.
+
+1. On its first launch with sync the phone makes its device id and stamps only the settings that differ from the defaults.
+2. Each list from `scheduledTasks.subscribe` whose settings prompts changed merges at once, per setting by the larger `at`, then the larger `by`. Values another device set apply before discovery or the brief read them.
+3. When the phone has something newer, or the machine has more than one settings task, it lists the tasks again, writes to the smallest id and deletes the rest.
+4. A local edit goes up a second after the last change. Its own write comes back on the subscription and merges to nothing, so nothing loops.
+5. After you move the Orchestrator to another machine on the phone, the old machine's document gets the new machine's id too.
+
+The phone keeps "while closed" off as 0, and the document as null. The relay and discovery only look at tasks whose prompt is the "while closed" check, so the settings task never decides who relays. The phone has no scheduled-task list to hide it from.
 
 ## Two apps, one Orchestrator
 
