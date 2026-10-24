@@ -93,6 +93,7 @@ In the background the phone relays nothing, polls nothing and sets no timers: th
 | The typing bubble animates while the turn runs | The dot grid on the shared second ticker | The app's single-ticker rule |
 | Needs you and Overview cover the Orchestrator's machine | The same | Phase 4 on the Mac covers every machine |
 | Unsent images survive leaving the pane | The same, in memory only | As on the Mac |
+| The composer's Stash button with its count, the stash list, restore and swap | The same button and list as a thread's composer, sharing the one stash on the phone | T3 keeps one stash for every composer. It stays on the device until the Mac documents a synced Orchestrator stash in its "Settings on every device" |
 
 ## Bots
 

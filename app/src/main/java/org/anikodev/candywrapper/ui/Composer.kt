@@ -457,7 +457,7 @@ private fun ModelPill(server: ServerInfo, settings: ComposerSettings, driver: St
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun StashButton(count: Int, canStash: Boolean, enabled: Boolean, onStash: () -> Unit, onOpen: (() -> Unit)?) {
+internal fun StashButton(count: Int, canStash: Boolean, enabled: Boolean, onStash: () -> Unit, onOpen: (() -> Unit)?) {
     val c = Candy.colors
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()

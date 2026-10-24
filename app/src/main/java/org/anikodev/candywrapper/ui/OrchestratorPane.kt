@@ -74,6 +74,8 @@ import org.anikodev.candywrapper.core.orchestrator.ChatItem
 import org.anikodev.candywrapper.core.orchestrator.CrewCard
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorChat
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorNeed
+import org.anikodev.candywrapper.core.stash.NewStashImage
+import org.anikodev.candywrapper.core.stash.StashEntry
 import org.anikodev.candywrapper.core.sync.ConnectionState
 import org.anikodev.candywrapper.core.sync.EnvironmentSession
 import org.anikodev.candywrapper.core.sync.PendingRequest
@@ -100,6 +102,9 @@ data class OrchestratorPaneState(
     val files: List<PickedFile> = emptyList(),
     val busy: String? = null,
     val error: String? = null,
+    /** The prompt stash, shared with every thread's composer, and whether its list is open over the composer. */
+    val stashed: List<StashEntry> = emptyList(),
+    val stashOpen: Boolean = false,
 )
 
 /** What the pane's controls do. */
@@ -120,6 +125,10 @@ class PaneActions(
     val approve: (String) -> Unit = {},
     val settings: () -> Unit = {},
     val dismissError: () -> Unit = {},
+    val stash: () -> Unit = {},
+    val toggleStash: () -> Unit = {},
+    val restoreStashed: (StashEntry, swap: Boolean) -> Unit = { _, _ -> },
+    val deleteStashed: (StashEntry) -> Unit = {},
 )
 
 /** Redesign's Orchestrator pane on a phone: the sidebar's pinned row opens it full screen. */
@@ -172,6 +181,14 @@ fun OrchestratorScreen(graph: AppGraph, nav: Navigator) {
         }
     }
 
+    // The prompt stash, the same one the thread composers use (ThreadScreen.kt). It stays on this phone.
+    // TODO(sync): the Mac keeps the composer draft per device (orchestrator.md, "Settings on every device"); if it
+    // syncs an Orchestrator stash later, follow the format it documents there.
+    val stashed by graph.stash.entries.collectAsStateWithLifecycle()
+    var stashOpen by remember { mutableStateOf(false) }
+
+    suspend fun draftImages(picked: List<PickedFile>) = picked.map { NewStashImage(it.name, it.mimeType, readPick(context, it)) }
+
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_IMAGES)) { uris ->
         for (uri in uris) if (pendingImages.size < MAX_IMAGES) describePick(context, uri)?.let { if (pendingImages.none { f -> f.uri == uri }) pendingImages += it }
     }
@@ -209,6 +226,31 @@ fun OrchestratorScreen(graph: AppGraph, nav: Navigator) {
             approve = { decision -> act(null) { thread?.state?.value?.pending?.firstOrNull()?.let { p -> thread.approve(p.requestId, decision) } } },
             settings = { nav.push(Screen.OrchestratorSettings) },
             dismissError = { error = null },
+            stash = {
+                val text = graph.orchestratorDraft.value.value.orEmpty().trim()
+                val files = pendingImages.toList()
+                if (text.isNotEmpty() || files.isNotEmpty()) act(null) {
+                    withContext(Dispatchers.IO) { graph.stash.stash(text, draftImages(files)) }
+                    // Cleared only once the entry is on disk, so a failed write keeps the draft.
+                    graph.orchestratorDraft.set(null)
+                    pendingImages.removeAll(files)
+                }
+            },
+            toggleStash = { stashOpen = !stashOpen },
+            restoreStashed = { entry, swap ->
+                val text = graph.orchestratorDraft.value.value.orEmpty().trim()
+                val files = pendingImages.toList()
+                stashOpen = false
+                act(null) {
+                    val restored = withContext(Dispatchers.IO) {
+                        if (swap) graph.stash.swap(entry.id, text, draftImages(files)) else graph.stash.restore(entry.id)
+                    } ?: return@act
+                    graph.orchestratorDraft.set(restored.into(text, swap).ifEmpty { null })
+                    if (swap) pendingImages.removeAll(files)
+                    for (img in restored.images) if (pendingImages.size < MAX_IMAGES) pendingImages += PickedFile(Uri.fromFile(img.file), img.name, img.mimeType, img.sizeBytes)
+                }
+            },
+            deleteStashed = { e -> act(null) { withContext(Dispatchers.IO) { graph.stash.delete(e.id) } } },
         )
     }
     val connection = session?.state?.collectAsStateWithLifecycle()?.value
@@ -219,6 +261,7 @@ fun OrchestratorScreen(graph: AppGraph, nav: Navigator) {
                 ui = ui.copy(connected = connection is ConnectionState.Live),
                 items = items, undoable = undoable, pending = threadState?.pending?.firstOrNull(),
                 draft = draft.orEmpty(), files = pendingImages.toList(), busy = busy, error = error,
+                stashed = stashed, stashOpen = stashOpen,
             ),
             tab, { tab = it }, actions,
         )
@@ -324,6 +367,13 @@ private fun BoxScope.Chat(state: OrchestratorPaneState, actions: PaneActions) {
             pending != null -> ApprovalPanel(pending, state.busy != null, actions.approve)
         }
         state.error?.let { Alert(it, NoticeTone.ERROR, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), action = "Dismiss", onAction = actions.dismissError) }
+        if (state.stashOpen && pending == null) StashList(
+            state.stashed, wallClock(), canSwap = state.draft.isNotBlank() || state.files.isNotEmpty(),
+            onRestore = { actions.restoreStashed(it, false) },
+            onSwap = { actions.restoreStashed(it, true) },
+            onDelete = actions.deleteStashed,
+            onClose = actions.toggleStash,
+        )
         ChatComposer(state, actions)
     }
 }
@@ -491,6 +541,8 @@ private fun ChatComposer(state: OrchestratorPaneState, actions: PaneActions) {
         state.busy?.takeIf { it.isNotEmpty() }?.let { Txt(it, CandyType.xs, c.mutedForeground, modifier = Modifier.padding(start = 48.dp, bottom = 4.dp)) }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             IconButton(Icons.Plus, "Attach images", enabled = !locked, box = 36.dp, onClick = actions.attach)
+            val canStash = !locked && state.busy == null && (state.draft.isNotBlank() || state.files.isNotEmpty())
+            StashButton(state.stashed.size, canStash, !locked, actions.stash, actions.toggleStash)
             val shape = RoundedCornerShape(20.dp)
             val paste = actions.paste
             BasicTextField(

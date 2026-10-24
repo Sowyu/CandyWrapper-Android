@@ -17,6 +17,7 @@ import org.anikodev.candywrapper.core.orchestrator.CrewCard
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorBrief
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorChat
 import org.anikodev.candywrapper.core.orchestrator.OrchestratorNeed
+import org.anikodev.candywrapper.core.stash.StashEntry
 import org.anikodev.candywrapper.orchestrator.OrchestratorUi
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -79,12 +80,20 @@ class OrchestratorShotTest {
         row("m6", "assistant_message", "Scribe is done: **docs/release.md** has the notes. *Fix the flaky sidebar test* wants to run `./gradlew :core:test`. You wrote there 3 minutes ago, so it's yours to allow.", 42, run = "r2"),
     )
 
-    private fun pane(name: String, tab: PaneTab, dark: Boolean) = redesignShot(name, dark) {
+    private val stashed = listOf(
+        StashEntry("s1", Fixtures.NOW - 2 * 60_000L, "Start a worker on the tablet layout once the sidebar test is green"),
+        StashEntry("s2", Fixtures.NOW - 47 * 60_000L, "What did Scribe change in docs/release.md?"),
+    )
+
+    private fun pane(name: String, tab: PaneTab, dark: Boolean, stashOpen: Boolean = false) = redesignShot(name, dark) {
         AppShell(DrawerState(open = false), sidebar = {}) {
             val items = OrchestratorChat.items(rows, running = true, nowMs = Fixtures.NOW, zone = ZoneOffset.UTC)
-            OrchestratorPanel(OrchestratorPaneState(ui, items, undoable = setOf("m3"), draft = ""), tab, {}, PaneActions())
+            OrchestratorPanel(OrchestratorPaneState(ui, items, undoable = setOf("m3"), draft = "", stashed = stashed, stashOpen = stashOpen), tab, {}, PaneActions())
         }
     }
+
+    @Test fun stashLight() = pane("orchestrator-stash", PaneTab.CHAT, false, stashOpen = true)
+    @Test fun stashDark() = pane("orchestrator-stash", PaneTab.CHAT, true, stashOpen = true)
 
     @Test fun chatLight() = pane("orchestrator-chat", PaneTab.CHAT, false)
     @Test fun chatDark() = pane("orchestrator-chat", PaneTab.CHAT, true)
