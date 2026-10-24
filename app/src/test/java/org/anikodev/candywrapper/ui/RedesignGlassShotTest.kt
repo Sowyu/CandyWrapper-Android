@@ -24,6 +24,7 @@ import org.robolectric.annotation.Config
 class RedesignGlassShotTest {
     @get:Rule val compose = createComposeRule()
     private val dir = Files.createTempDirectory("redesign").toFile()
+    private val photo = redesignPhoto(dir)
     private val store = DitherArtStore(dir, dir, renderOnPeek = true)
 
     private val files = listOf(
@@ -35,7 +36,7 @@ class RedesignGlassShotTest {
     private fun glass(dark: Boolean) {
         wallClock = { Fixtures.NOW }
         compose.setContent {
-            CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT, RedesignStyle(on = true)) {
+            CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT, RedesignStyle(on = true, picture = photo)) {
                 CompositionLocalProvider(LocalProjectIcons provides Fixtures.icons, LocalArtStore provides store, LocalImages provides ImageShotTest.FakeImages) {
                     AppShell(DrawerState(open = false), sidebar = {}) {
                         ThreadShotTest.ThreadScreenFixture(ThreadFixtures.state.copy(running = true, queued = ThreadFixtures.queued)) {

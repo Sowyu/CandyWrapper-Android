@@ -24,15 +24,16 @@ import org.robolectric.annotation.Config
 @Config(qualifiers = PHONE)
 class RedesignShotTest {
     private val dir = Files.createTempDirectory("redesign").toFile()
+    private val photo = redesignPhoto(dir)
     private val store = DitherArtStore(dir, dir, renderOnPeek = true)
 
-    private fun redesignShot(name: String, dark: Boolean, content: @Composable () -> Unit) {
+    private fun redesignShot(name: String, dark: Boolean, style: RedesignStyle = RedesignStyle(on = true, picture = photo), content: @Composable () -> Unit) {
         wallClock = { Fixtures.NOW }
         captureRoboImage(
             "src/test/snapshots/redesign/$name.${if (dark) "dark" else "light"}.png",
             RoborazziOptions(compareOptions = RoborazziOptions.CompareOptions(changeThreshold = 0.01f)),
         ) {
-            CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT, RedesignStyle(on = true)) {
+            CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT, style) {
                 CompositionLocalProvider(LocalProjectIcons provides Fixtures.icons, LocalArtStore provides store, content = content)
             }
         }
@@ -71,14 +72,17 @@ class RedesignShotTest {
     @Test fun runningLight() = running(false)
     @Test fun runningDark() = running(true)
 
-    private fun sidebar(dark: Boolean) = redesignShot("sidebar-phone", dark) {
+    private fun sidebar(dark: Boolean, name: String = "sidebar-phone", style: RedesignStyle = RedesignStyle(on = true, picture = photo)) = redesignShot(name, dark, style) {
         AppShell(
             DrawerState(open = true),
-            sidebar = { SidebarPanel(Fixtures.environments[0], Fixtures.environments, Fixtures.data, "e1:t1", Fixtures.NOW, SidebarActions()) },
+            sidebar = { SidebarPanel(Fixtures.environments[0], Fixtures.environments, Fixtures.data, "e1:t1", Fixtures.NOW, SidebarActions(), picturePrompt = style.needsPicture) },
         ) { ThreadShotTest.ThreadScreenFixture() }
     }
     @Test fun sidebarLight() = sidebar(false)
     @Test fun sidebarDark() = sidebar(true)
+    // An update from the painted pictures: no art, and the banner asking for a photo.
+    @Test fun sidebarNoPictureLight() = sidebar(false, "sidebar-no-picture-phone", RedesignStyle(on = true))
+    @Test fun sidebarNoPictureDark() = sidebar(true, "sidebar-no-picture-phone", RedesignStyle(on = true))
 
     private fun tablet(dark: Boolean) = redesignShot("thread-tablet", dark) {
         AppShell(
@@ -89,14 +93,14 @@ class RedesignShotTest {
     @Config(qualifiers = TABLET) @Test fun tabletLight() = tablet(false)
     @Config(qualifiers = TABLET) @Test fun tabletDark() = tablet(true)
 
-    private fun settings(dark: Boolean, name: String = "settings-phone") = redesignShot(name, dark) {
+    private fun settings(dark: Boolean, name: String = "settings-phone", style: RedesignStyle = RedesignStyle(on = true, picture = photo)) = redesignShot(name, dark, style) {
         AppShell(DrawerState(open = false), sidebar = {}) {
             ArtEmphasisEffect(ArtEmphasis.SETTINGS)
             Column(Modifier.fillMaxSize()) {
                 TopBar("Settings", onBack = {})
                 Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                     GroupLabel("Appearance")
-                    AppearanceSettings(ThemeChoice.SYSTEM, RedesignStyle(on = true), {}, {}, {}, {}, {}, {})
+                    AppearanceSettings(ThemeChoice.SYSTEM, style, {}, {}, {}, {}, {})
                     GroupLabel("Sidebar")
                     SidebarSettings(true) {}
                 }
@@ -107,4 +111,6 @@ class RedesignShotTest {
     @Test fun settingsDark() = settings(true)
     @Config(qualifiers = TABLET) @Test fun settingsTabletLight() = settings(false, "settings-tablet")
     @Config(qualifiers = TABLET) @Test fun settingsTabletDark() = settings(true, "settings-tablet")
+    @Test fun settingsNoPictureLight() = settings(false, "settings-no-picture-phone", RedesignStyle(on = true))
+    @Test fun settingsNoPictureDark() = settings(true, "settings-no-picture-phone", RedesignStyle(on = true))
 }

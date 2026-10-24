@@ -444,7 +444,7 @@ fun Notice(text: String, color: Color, surface: Color, modifier: Modifier = Modi
 }
 
 @Composable
-fun Alert(text: String, tone: NoticeTone, modifier: Modifier = Modifier, title: String? = null, action: String? = null, onAction: () -> Unit = {}) {
+fun Alert(text: String, tone: NoticeTone, modifier: Modifier = Modifier, title: String? = null, action: String? = null, onAction: () -> Unit = {}, onDismiss: (() -> Unit)? = null) {
     val c = Candy.colors
     val shape = RoundedCornerShape(Radius.xl)
     val (border, fill, fg, icon, iconTint) = when (tone) {
@@ -465,6 +465,7 @@ fun Alert(text: String, tone: NoticeTone, modifier: Modifier = Modifier, title: 
             Txt(text, CandyType.sm, if (title != null) fg.copy(alpha = 0.8f) else fg)
         }
         if (action != null) CButton(action, kind = ButtonKind.GHOST, size = ButtonSize.SM, onClick = onAction)
+        if (onDismiss != null) IconButton(Icons.X, "Dismiss", tint = c.mutedForeground, size = 14.dp, box = 32.dp, onClick = onDismiss)
     }
 }
 

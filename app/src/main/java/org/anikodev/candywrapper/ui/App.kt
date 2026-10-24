@@ -291,6 +291,10 @@ private fun SidebarHost(
     val orchestrator by graph.orchestrator.ui.collectAsStateWithLifecycle()
     val orchestratorConfig by graph.orchestratorStore.config.collectAsStateWithLifecycle()
     val orchestratorNow by rememberUpdatedState(orchestrator)
+    val style by graph.redesignStyle.collectAsStateWithLifecycle()
+    val promptDismissed by graph.redesignPromptDismissed.value.collectAsStateWithLifecycle()
+    val picturePrompt = style.needsPicture && !promptDismissed
+    val photos = rememberRedesignPhotoFlow(graph)
     val handsOffNow by rememberUpdatedState(orchestratorConfig.handsOff)
 
     fun closeOnPhone() { scope.launch { drawer.close() } }
@@ -416,13 +420,15 @@ private fun SidebarHost(
             renameOrchestrator = onRenameOrchestrator,
             handsOff = { t -> if (orchestratorNow.active) t.key in handsOffNow else null },
             toggleHandsOff = { t -> graph.orchestrator.toggleHandsOff(t.key) },
+            pickPicture = photos::change,
+            dismissPicturePrompt = { graph.redesignPromptDismissed.set(true) },
         )
     }
 
     if (legacy) {
         val models = scoped.map { s -> key(s.id) { s.env.value.label to s.threads.collectAsStateWithLifecycle().value } }
         val model = remember(models) { ThreadListModel.merge(models) }
-        LegacySidebarPanel(current, environments, model, openKey, now, actions, archived = archived, undo = undo?.first)
+        LegacySidebarPanel(current, environments, model, openKey, now, actions, archived = archived, undo = undo?.first, picturePrompt = picturePrompt)
     } else {
         SidebarPanel(
             current, environments, data, openKey, now, actions,
@@ -432,6 +438,7 @@ private fun SidebarHost(
             undo = undo?.first,
             orchestrator = if (orchestrator.active) OrchestratorRowInfo(orchestrator.name, orchestrator.machine, orchestrator.bot, orchestrator.needs.size,
                 orchestrator.working, open = nav.top == Screen.Orchestrator) else null,
+            picturePrompt = picturePrompt,
         )
     }
 }

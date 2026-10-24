@@ -22,6 +22,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -76,10 +82,7 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
     val style by graph.redesignStyle.collectAsStateWithLifecycle()
     val orchestrator by graph.orchestratorStore.config.collectAsStateWithLifecycle()
     val c = Candy.colors
-    val context = LocalContext.current
-    val choosePhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) graph.scope.launch(Dispatchers.IO) { copyPhoto(context, uri)?.let { graph.redesignPicture.set(it) } }
-    }
+    val photos = rememberRedesignPhotoFlow(graph)
     var selected by remember { mutableStateOf<EnvironmentSession?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -111,10 +114,9 @@ fun SettingsScreen(graph: AppGraph, nav: Navigator) {
                 GroupLabel("Appearance")
                 AppearanceSettings(
                     theme, style, graph::setTheme,
-                    onRedesign = graph.redesign::set,
+                    onRedesign = photos::toggle,
                     onAccent = graph.redesignAccent::set,
-                    onPicture = graph.redesignPicture::set,
-                    onChoosePhoto = { choosePhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    onChoosePhoto = photos::change,
                     onDim = { graph.redesignDim.set(it.toString()) },
                     orchestrator = orchestrator.enabled,
                     onOrchestrator = { on -> graph.orchestratorStore.update { it.copy(enabled = on) } },
@@ -210,8 +212,9 @@ private fun ConnectionRow(session: EnvironmentSession, onClick: () -> Unit) {
 
 /**
  * Settings > Appearance: light, dark or the system's, then Redesign (Experimental) and, while it is on,
- * its own options from the Mac's Appearance page: the accent, the picture it dithers and how much an
+ * its own options from the Mac's Appearance page: the accent, the photo it dithers and how much an
  * open thread dims it, and the Orchestrator's switch with the way to its page. Each change applies live.
+ * Redesign needs a photo, so [onRedesign] goes through [RedesignPhotoFlow] and there is no way to remove it.
  */
 @Composable
 fun AppearanceSettings(
@@ -220,7 +223,6 @@ fun AppearanceSettings(
     onTheme: (ThemeChoice) -> Unit,
     onRedesign: (Boolean) -> Unit,
     onAccent: (String) -> Unit,
-    onPicture: (String) -> Unit,
     onChoosePhoto: () -> Unit,
     onDim: (Int) -> Unit,
     orchestrator: Boolean = false,
@@ -254,18 +256,16 @@ fun AppearanceSettings(
                 }
             }
             Divider()
-            Box {
-                var open by remember { mutableStateOf(false) }
+            val picture = style.picture
+            if (picture == null) {
+                ListRow("Pick a picture for Redesign", icon = Icons.Image, trailing = { Icon(Icons.ChevronRight, c.mutedForeground, 16.dp) }, onClick = onChoosePhoto)
+            } else {
                 ListRow(
-                    "Picture", icon = Icons.Image, detail = "Dithered behind threads and Settings",
-                    trailing = { SelectValue(DitherPictures.label(style.picture), open) },
-                ) { open = true }
-                Menu(open, { open = false }, alignEnd = true, minWidth = 200.dp) {
-                    for ((id, label) in DitherPictures.builtIns) MenuItem(label, selected = id == style.picture) { open = false; onPicture(id) }
-                    if (DitherPictures.isPhoto(style.picture)) MenuItem("Photo", selected = true) { open = false }
-                    MenuSeparator()
-                    MenuItem("Choose a photo", Icons.Upload) { open = false; onChoosePhoto() }
-                }
+                    "Picture", detail = "Dithered behind threads and Settings",
+                    leading = { PhotoThumbnail(picture) },
+                    trailing = { CButton("Change picture", kind = ButtonKind.SECONDARY, size = ButtonSize.SM, onClick = onChoosePhoto) },
+                    onClick = onChoosePhoto,
+                )
             }
             Divider()
             DimSlider(style.dim, onDim)
@@ -357,6 +357,62 @@ private fun DimSlider(dim: Int, onDim: (Int) -> Unit) {
             )
         }
     }
+}
+
+/** Redesign's photo cropped to a 40dp square, decoded off the main thread from the art store's files. */
+@Composable
+private fun PhotoThumbnail(picture: String) {
+    val c = Candy.colors
+    val filesDir = LocalArtStore.current?.filesDir
+    val px = with(LocalDensity.current) { 40.dp.roundToPx() }
+    val image by produceState<ImageBitmap?>(null, picture, filesDir, px) {
+        value = filesDir?.let { dir ->
+            withContext(Dispatchers.Default) { DitherPictures.pixels(picture, dir, px, px)?.let { Bitmap.createBitmap(it, px, px, Bitmap.Config.ARGB_8888).asImageBitmap() } }
+        }
+    }
+    val shape = RoundedCornerShape(Radius.md)
+    Box(Modifier.size(40.dp).clip(shape).background(c.muted).border(1.dp, c.border, shape)) {
+        image?.let { Image(it, "Redesign picture", Modifier.fillMaxSize()) }
+    }
+}
+
+/**
+ * Redesign takes the owner's photo. Turning it on without one opens the picker first and only a pick turns
+ * it on; a cancel, or a photo that cannot be copied, leaves it off. [open] launches the system picker and
+ * [picked] gets the copied photo's id, or null.
+ */
+class RedesignPhotoFlow(
+    private val hasPhoto: () -> Boolean,
+    private val setOn: (Boolean) -> Unit,
+    private val setPicture: (String) -> Unit,
+) {
+    var open: () -> Unit = {}
+    // ponytail: lost if Android kills the process behind the picker, then the toggle is tapped again; save it if that shows up.
+    private var enabling = false
+
+    fun toggle(on: Boolean) {
+        if (on && !hasPhoto()) { enabling = true; open() } else setOn(on)
+    }
+
+    fun change() { enabling = false; open() }
+
+    fun picked(id: String?) {
+        if (id != null) { setPicture(id); if (enabling) setOn(true) }
+        enabling = false
+    }
+}
+
+/** The picker flow bound to the system photo picker and [graph]'s Redesign settings. Settings and the sidebar banner use it. */
+@Composable
+fun rememberRedesignPhotoFlow(graph: AppGraph): RedesignPhotoFlow {
+    val context = LocalContext.current
+    val flow = remember(graph) { RedesignPhotoFlow({ graph.redesignStyle.value.picture != null }, graph.redesign::set, graph.redesignPicture::set) }
+    val scope = rememberCoroutineScope()
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) flow.picked(null) else scope.launch { flow.picked(withContext(Dispatchers.IO) { copyPhoto(context, uri) }) }
+    }
+    flow.open = { launcher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+    return flow
 }
 
 /** Copies a picked photo into the app's files as Redesign's picture and returns its id; the one it replaces goes. */

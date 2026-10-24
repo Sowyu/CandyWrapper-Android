@@ -100,6 +100,8 @@ class AppGraph(private val app: Application) {
     val redesignDim = UiValue(REDESIGN_DIM)
     /** Redesign's sidebar sections the user folded, project group keys joined by newlines. */
     val redesignFolded = UiValue(REDESIGN_FOLDED)
+    /** The sidebar's "Pick a picture for Redesign" banner was closed. */
+    val redesignPromptDismissed = UiSetting(REDESIGN_PROMPT_DISMISSED, false)
 
     /** Settings > Orchestrator, stored in the app's files (data/OrchestratorStore). Read on the boot thread. */
     val orchestratorStore = org.anikodev.candywrapper.data.OrchestratorStore(app.filesDir, scope)
@@ -157,7 +159,7 @@ class AppGraph(private val app: Application) {
         lastEnvironmentId = db.uiValue(LAST_ENV)
         lastThreadId = db.uiValue(LAST_THREAD)
         _theme.value = db.uiValue(THEME)?.let { runCatching { ThemeChoice.valueOf(it) }.getOrNull() } ?: ThemeChoice.SYSTEM
-        for (s in listOf(legacySidebar, planMode, settledShelf, snoozedShelf, workingSection, workingShelf, redesign)) s.load()
+        for (s in listOf(legacySidebar, planMode, settledShelf, snoozedShelf, workingSection, workingShelf, redesign, redesignPromptDismissed)) s.load()
         for (v in listOf(machineScope, projectScope, redesignAccent, redesignPicture, redesignDim, redesignFolded, orchestratorDraft)) v.load()
         orchestratorStore.load()
         stash.entries
@@ -232,9 +234,7 @@ class AppGraph(private val app: Application) {
             .stateIn(scope, SharingStarted.Eagerly, styleOf(redesign.value.value, redesignAccent.value.value, redesignPicture.value.value, redesignDim.value.value))
     }
 
-    private fun styleOf(on: Boolean, accent: String?, picture: String?, dim: String?) = RedesignStyle().let { d ->
-        RedesignStyle(on, accent ?: d.accent, picture ?: d.picture, dim?.toIntOrNull() ?: d.dim)
-    }
+    private fun styleOf(on: Boolean, accent: String?, picture: String?, dim: String?) = RedesignStyle.stored(on, accent, picture, dim)
 
     /** After a sign-in or sign-out. */
     fun accountChanged() {
@@ -285,6 +285,7 @@ class AppGraph(private val app: Application) {
         private const val REDESIGN_PICTURE = "redesign_picture"
         private const val REDESIGN_DIM = "redesign_dim"
         private const val REDESIGN_FOLDED = "redesign_folded"
+        private const val REDESIGN_PROMPT_DISMISSED = "redesign_prompt_dismissed"
         private const val ORCHESTRATOR_DRAFT = "orchestrator_draft"
     }
 }

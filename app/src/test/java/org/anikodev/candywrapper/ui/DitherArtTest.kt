@@ -1,7 +1,5 @@
 package org.anikodev.candywrapper.ui
 
-import java.io.File
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -33,15 +31,15 @@ class DitherArtTest {
         // A 411x891dp window at 2dp dots: 206 by 446 canvas pixels, about 360 KB of ARGB.
         val w = 206
         val h = 446
+        val px0 = IntArray(w * h) { i -> 0xFF000000.toInt() or ((i % w) * 255 / w shl 16) or ((i / w) * 255 / h shl 8) or 0x60 }
         val times = (1..5).map {
             val start = System.nanoTime()
-            val px = DitherPictures.pixels(DitherPictures.DEFAULT, File("."), w, h)!!
+            val px = px0.copyOf()
             DitherArt.dither(px, w, h, bg)
             DitherArt.blurred(px, w, h)
             (System.nanoTime() - start) / 1_000_000.0
         }
         println("redesign art ${w}x$h: median ${times.sorted()[2]} ms")
-        assertEquals(w * h.toLong(), 0L + DitherPictures.pixels("lagoon", File("."), w, h)!!.size)
     }
 
     private companion object { const val OPAQUE = -0x1000000 }

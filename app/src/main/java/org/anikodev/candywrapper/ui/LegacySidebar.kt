@@ -77,6 +77,7 @@ fun LegacySidebarPanel(
     archived: ArchivedList = ArchivedList(),
     undo: UndoNotice? = null,
     initialQuery: String = "",
+    picturePrompt: Boolean = false,
 ) {
     val c = Candy.colors
     var query by rememberSaveable { mutableStateOf(initialQuery) }
@@ -98,6 +99,7 @@ fun LegacySidebarPanel(
             }
         }
         ConnectionAlerts(current, environments, actions)
+        if (picturePrompt) PicturePrompt(actions)
         Row(Modifier.fillMaxWidth().height(32.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
             Txt(if (archived.open) "Archived" else "Projects", CandyType.xsMedium, c.sidebarMutedForeground, modifier = Modifier.weight(1f))
         }

@@ -78,7 +78,7 @@ enum class ArtEmphasis { HERO, THREAD, SETTINGS, PAGE }
  * The rendered art: one pixel per dot, and its pre-blurred copy for frosted panes. Rendered once per
  * picture, canvas size and background off the main thread, then cached as a PNG in the app's cache.
  */
-class DitherArtStore(private val filesDir: File, cacheDir: File, private val renderOnPeek: Boolean = false) {
+class DitherArtStore(val filesDir: File, cacheDir: File, private val renderOnPeek: Boolean = false) {
     data class Key(val picture: String, val width: Int, val height: Int, val background: Int)
 
     class Art(val key: Key, val image: ImageBitmap, val frost: ImageBitmap, val frostFactor: Int)
@@ -297,13 +297,16 @@ fun RedesignPanel(content: @Composable BoxScope.() -> Unit) {
     var panelSize by remember { mutableStateOf(IntSize.Zero) }
     // A keyboard or a shorter page never re-renders: the canvas keeps the tallest height seen at this width.
     var tallest by remember { mutableStateOf(0 to 0) }
-    val key = if (panelSize.width > 0 && panelSize.height > 0) {
+    val picture = style.picture
+    // No photo yet: Capy's plain background.
+    val key = if (picture != null && panelSize.width > 0 && panelSize.height > 0) {
         val w = ceil(panelSize.width / host.dotPx.toFloat()).toInt()
         val h = ceil(maxOf(panelSize.height, if (tallest.first == panelSize.width) tallest.second else 0) / host.dotPx.toFloat()).toInt()
-        DitherArtStore.Key(style.picture, w, h, c.background.toArgbInt())
+        DitherArtStore.Key(picture, w, h, c.background.toArgbInt())
     } else null
     val reveal = remember { Animatable(if (key != null && store?.peek(key) != null) 1f else 0f) }
     LaunchedEffect(key, store) {
+        if (picture == null) host.art = null
         if (key == null || store == null) return@LaunchedEffect
         store.peek(key)?.let { host.art = it; reveal.snapTo(1f); return@LaunchedEffect }
         // Another picture or appearance: the old art goes at once and the new one fades in. A new size keeps it meanwhile.

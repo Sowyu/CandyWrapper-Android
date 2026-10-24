@@ -97,6 +97,7 @@ fun SidebarPanel(
     initialQuery: String = "",
     initialMenu: String? = null,
     orchestrator: OrchestratorRowInfo? = null,
+    picturePrompt: Boolean = false,
 ) {
     val c = Candy.colors
     var query by rememberSaveable { mutableStateOf(initialQuery) }
@@ -129,6 +130,7 @@ fun SidebarPanel(
             if (c.redesign) RedesignHeader(query, { query = it }, data, actions) else ThreadHeader(query, { query = it }, data, actions)
         }
         ConnectionAlerts(current, environments, actions)
+        if (picturePrompt) PicturePrompt(actions)
         if (c.redesign && orchestrator != null) OrchestratorRow(orchestrator, actions)
         Box(Modifier.weight(1f)) {
             when {

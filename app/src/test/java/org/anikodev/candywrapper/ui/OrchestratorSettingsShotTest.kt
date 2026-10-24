@@ -27,6 +27,7 @@ import org.robolectric.annotation.Config
 @Config(qualifiers = PHONE)
 class OrchestratorSettingsShotTest {
     private val dir = Files.createTempDirectory("orchestrator").toFile()
+    private val photo = redesignPhoto(dir)
     private val store = DitherArtStore(dir, dir, renderOnPeek = true)
 
     private fun effort(id: String) = OptionDescriptor(
@@ -75,7 +76,7 @@ class OrchestratorSettingsShotTest {
             "src/test/snapshots/redesign/$name.${if (dark) "dark" else "light"}.png",
             RoborazziOptions(compareOptions = RoborazziOptions.CompareOptions(changeThreshold = 0.01f)),
         ) {
-            CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT, RedesignStyle(on = true)) {
+            CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT, RedesignStyle(on = true, picture = photo)) {
                 CompositionLocalProvider(LocalProjectIcons provides Fixtures.icons, LocalArtStore provides store) {
                     AppShell(DrawerState(open = false), sidebar = {}) { ArtEmphasisEffect(ArtEmphasis.SETTINGS); content() }
                 }

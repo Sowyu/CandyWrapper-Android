@@ -11,7 +11,6 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 /**
  * The Redesign art, after CandyWrapper's `DitherArt` (DitherArtView.swift): the picture covering the
@@ -116,74 +115,23 @@ object DitherArt {
 }
 
 /**
- * The pictures Redesign can dither. The Mac dithers the desktop picture; Android hands an app the
- * wallpaper only with a storage permission, so the built-in ones are painted in code (no bundled
- * assets) and a photo from the system picker is copied into the app's files.
+ * The picture Redesign dithers: the owner's photo from the system picker, copied into the app's files.
+ * The Mac dithers the desktop picture; Android hands an app the wallpaper only with a storage permission.
  */
 object DitherPictures {
-    const val DEFAULT = "dusk"
     private const val PHOTO = "photo:"
 
-    /** id, label, base colour and soft blobs (x, y, radius as a share of the longer side, colour). */
-    private data class Painted(val id: String, val label: String, val base: Int, val blobs: List<Blob>)
-    private data class Blob(val x: Float, val y: Float, val r: Float, val color: Int)
-
-    private val painted = listOf(
-        Painted("dusk", "Dusk", 0xFF1B1F3A.toInt(), listOf(
-            Blob(0.15f, 0.2f, 0.55f, 0xFFFF7A59.toInt()), Blob(0.85f, 0.1f, 0.45f, 0xFFFFB36B.toInt()),
-            Blob(0.75f, 0.7f, 0.65f, 0xFF6A4FD8.toInt()), Blob(0.1f, 0.95f, 0.5f, 0xFF2D7FD3.toInt()),
-        )),
-        Painted("lagoon", "Lagoon", 0xFF0B3D4F.toInt(), listOf(
-            Blob(0.2f, 0.15f, 0.55f, 0xFF19C2B0.toInt()), Blob(0.9f, 0.35f, 0.5f, 0xFF2A6FE0.toInt()),
-            Blob(0.3f, 0.75f, 0.45f, 0xFFA6F0C6.toInt()), Blob(0.85f, 0.95f, 0.55f, 0xFF0A2A5E.toInt()),
-        )),
-        Painted("ember", "Ember", 0xFF3A0F12.toInt(), listOf(
-            Blob(0.8f, 0.15f, 0.55f, 0xFFE2463B.toInt()), Blob(0.2f, 0.4f, 0.5f, 0xFFFF9A3C.toInt()),
-            Blob(0.6f, 0.65f, 0.4f, 0xFFFFD166.toInt()), Blob(0.15f, 0.95f, 0.55f, 0xFF6B1F4F.toInt()),
-        )),
-        Painted("meadow", "Meadow", 0xFF1F3A1C.toInt(), listOf(
-            Blob(0.25f, 0.1f, 0.5f, 0xFF7EC8E3.toInt()), Blob(0.85f, 0.4f, 0.5f, 0xFFF2D45C.toInt()),
-            Blob(0.2f, 0.7f, 0.55f, 0xFF5CC46B.toInt()), Blob(0.8f, 0.95f, 0.45f, 0xFF2E6B3A.toInt()),
-        )),
-    )
-
-    /** The built-in choices, id to label. */
-    val builtIns: List<Pair<String, String>> = painted.map { it.id to it.label }
-
-    fun isPhoto(id: String) = id.startsWith(PHOTO)
-    fun label(id: String) = if (isPhoto(id)) "Photo" else painted.firstOrNull { it.id == id }?.label ?: "Dusk"
+    fun isPhoto(id: String?) = id != null && id.startsWith(PHOTO)
     fun photoId(file: File) = PHOTO + file.name
     fun folder(filesDir: File) = File(filesDir, "redesign")
+    /** The photo's file for [id], or null for anything else, such as the painted ids older builds stored. */
+    fun file(id: String, filesDir: File) = if (isPhoto(id)) File(folder(filesDir), id.removePrefix(PHOTO)) else null
 
     /**
-     * The picture covering a [w] by [h] canvas, centred, as opaque ARGB; null when a photo cannot be
-     * read. A photo decodes downsampled near the canvas size, so a 12 MP picture costs a few hundred KB.
+     * The photo covering a [w] by [h] canvas, centred, as opaque ARGB; null when there is none or it cannot
+     * be read. It decodes downsampled near the canvas size, so a 12 MP picture costs a few hundred KB.
      */
-    fun pixels(id: String, filesDir: File, w: Int, h: Int): IntArray? {
-        if (isPhoto(id)) return photo(File(folder(filesDir), id.removePrefix(PHOTO)), w, h)
-        val p = painted.firstOrNull { it.id == id } ?: painted.first()
-        return paint(p, w, h)
-    }
-
-    private fun paint(p: Painted, w: Int, h: Int): IntArray {
-        val out = IntArray(w * h)
-        val side = max(w, h).toFloat()
-        val rgb = FloatArray(3)
-        for (y in 0 until h) for (x in 0 until w) {
-            rgb[0] = (p.base shr 16 and 0xff).toFloat(); rgb[1] = (p.base shr 8 and 0xff).toFloat(); rgb[2] = (p.base and 0xff).toFloat()
-            for (b in p.blobs) {
-                val dx = (x - b.x * w) / side
-                val dy = (y - b.y * h) / side
-                val t = (1f - sqrt(dx * dx + dy * dy) / b.r).coerceIn(0f, 1f)
-                val wgt = t * t * (3 - 2 * t)
-                rgb[0] += ((b.color shr 16 and 0xff) - rgb[0]) * wgt
-                rgb[1] += ((b.color shr 8 and 0xff) - rgb[1]) * wgt
-                rgb[2] += ((b.color and 0xff) - rgb[2]) * wgt
-            }
-            out[y * w + x] = -0x1000000 or (rgb[0].roundToInt() shl 16) or (rgb[1].roundToInt() shl 8) or rgb[2].roundToInt()
-        }
-        return out
-    }
+    fun pixels(id: String, filesDir: File, w: Int, h: Int): IntArray? = file(id, filesDir)?.let { photo(it, w, h) }
 
     private fun photo(file: File, w: Int, h: Int): IntArray? {
         if (!file.exists()) return null

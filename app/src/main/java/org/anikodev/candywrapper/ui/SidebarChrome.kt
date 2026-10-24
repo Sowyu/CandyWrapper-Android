@@ -1,6 +1,7 @@
 package org.anikodev.candywrapper.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -131,6 +132,9 @@ class SidebarActions(
     /** Whether the Orchestrator leaves a thread alone; null while the Orchestrator is off, which hides the item. */
     val handsOff: (ThreadSummary) -> Boolean? = { null },
     val toggleHandsOff: (ThreadSummary) -> Unit = {},
+    /** The "Pick a picture for Redesign" banner: open the photo picker, or close the banner. */
+    val pickPicture: () -> Unit = {},
+    val dismissPicturePrompt: () -> Unit = {},
 )
 
 /** T3's thread status (Sidebar.logic.ts `resolveThreadStatusPill`): label, text colour and dot colour. */
@@ -256,6 +260,16 @@ fun ConnectionAlerts(current: SidebarEnvironment?, environments: List<SidebarEnv
             else -> Unit
         }
     }
+}
+
+/** Redesign is on with no photo, as after an update from the painted pictures: a tap opens the picker, the X closes it. */
+@Composable
+fun PicturePrompt(actions: SidebarActions) {
+    Alert(
+        "Pick a picture for Redesign", NoticeTone.INFO,
+        Modifier.padding(horizontal = 8.dp, vertical = 4.dp).clip(RoundedCornerShape(Radius.xl)).clickable(role = Role.Button, onClick = actions.pickPicture),
+        onDismiss = actions.dismissPicturePrompt,
+    )
 }
 
 @Composable

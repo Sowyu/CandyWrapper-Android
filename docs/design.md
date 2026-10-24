@@ -74,7 +74,7 @@ Settings > Appearance > Redesign is CandyWrapper's Redesign theme on the Mac (in
 
 | Mac Redesign | Here | Why |
 |---|---|---|
-| Dithers the desktop picture, or a chosen file | Four pictures painted in code (Dusk, Lagoon, Ember, Meadow), or a photo from the system picker | Android hands an app the wallpaper only with a storage permission; no bundled image assets |
+| Dithers the desktop picture, or a chosen file | Only the owner's photo from the system picker. Turning Redesign on without one opens the picker, and a cancel leaves it off. An install that stored one of the old painted pictures keeps Redesign on over Capy's plain background, with "Pick a picture for Redesign" in Settings > Appearance and as a dismissible banner on the thread list | Android hands an app the wallpaper only with a storage permission; the owner wants their own picture |
 | Frosted panes blur the art and the thread live under them | The same from Android 12, at a quarter of the pane's pixels; Android 11 and older draw a pre-blurred copy of the art, and message bubbles stay solid | Android 11 has no RenderEffect; a bubble would blur under every row of a scrolling list |
 | Menus and popovers blur what is under them | Menus blur the art but not the thread | A menu is its own window, and a window must not draw another window's layers |
 | The dot grid sweeps continuously while working | Each tick of the shared one-second ticker sends one 600 ms sweep, then it rests | The app's single-ticker rule: it stops when "Working for" stops |

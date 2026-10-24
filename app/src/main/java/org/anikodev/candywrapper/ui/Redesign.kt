@@ -8,16 +8,27 @@ import androidx.compose.ui.graphics.lerp
 
 /**
  * Settings > Appearance > Redesign (Experimental): CandyWrapper's Redesign theme on the Mac (internally
- * "Dither", after Capy's desktop app). [picture] is a [DitherPictures] id; [dim] is the share of the
- * background over the art behind an open thread, 0 to 90 (the Mac's "Background dim", 35 by default).
+ * "Dither", after Capy's desktop app). [picture] is the owner's photo as a [DitherPictures] id, null
+ * until one is picked, when Redesign draws Capy's plain background; [dim] is the share of the background
+ * over the art behind an open thread, 0 to 90 (the Mac's "Background dim", 35 by default).
  */
 @Immutable
 data class RedesignStyle(
     val on: Boolean = false,
     val accent: String = RedesignAccent.TEAL.id,
-    val picture: String = DitherPictures.DEFAULT,
+    val picture: String? = null,
     val dim: Int = 35,
-)
+) {
+    /** Redesign is on with no photo, as after an update from the painted pictures: Settings and the sidebar ask for one. */
+    val needsPicture get() = on && picture == null
+
+    companion object {
+        /** From the stored values. A painted id older builds stored (dusk, lagoon, ember, meadow) reads as no picture. */
+        fun stored(on: Boolean, accent: String?, picture: String?, dim: String?) = RedesignStyle(
+            on, accent ?: RedesignAccent.TEAL.id, picture?.takeIf(DitherPictures::isPhoto), dim?.toIntOrNull() ?: 35,
+        )
+    }
+}
 
 /**
  * Redesign's accent choices, from CandyWrapper's `DitherAccent`: teal is Capy's own `--primary`, the
