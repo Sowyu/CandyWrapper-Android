@@ -22,6 +22,8 @@ class FakeT3(val envId: String = "env-1") : Dispatcher() {
     val requests = CopyOnWriteArrayList<RecordedRequest>()
     val frames = CopyOnWriteArrayList<JsonObject>()
     @Volatile var ticketsMinted = 0
+    /** Fields added to the snapshot's one thread, after a comma. */
+    @Volatile var threadExtra = ""
 
     val base: String get() = server.url("/").toString()
     val origin: String get() = base.removeSuffix("/")
@@ -71,9 +73,10 @@ class FakeT3(val envId: String = "env-1") : Dispatcher() {
                         webSocket.send("""{"_tag":"Chunk","requestId":"$id","values":[{"kind":"snapshot","snapshot":{"schemaVersion":2,"snapshotSequence":7,
                             "archivedThreads":[],"projects":[{"id":"p","title":"demo","workspaceRoot":"/w"}],
                             "threads":[{"id":"t","projectId":"p","title":"Hello","status":"completed","latestRunId":"r","activeProviderThreadId":null,
-                            "createdAt":"2026-10-09T09:12:47.701Z","updatedAt":"2026-10-09T09:12:47.701Z","lineage":{"relationshipToParent":null}}]}}]}""")
+                            "createdAt":"2026-10-09T09:12:47.701Z","updatedAt":"2026-10-09T09:12:47.701Z","lineage":{"relationshipToParent":null}$threadExtra}]}}]}""")
                     }
                     "server.getConfig" -> webSocket.send("""{"_tag":"Exit","requestId":"$id","exit":{"_tag":"Success","value":{"directEndpoints":[]}}}""")
+                    "orchestration.dispatchCommand" -> webSocket.send("""{"_tag":"Exit","requestId":"$id","exit":{"_tag":"Success","value":{"sequence":8}}}""")
                     "server.probe" -> webSocket.send("""{"_tag":"Exit","requestId":"$id","exit":{"_tag":"Success","value":{}}}""")
                 }
                 "Ack" -> if (o.str("requestId") == shellId && !synced) {

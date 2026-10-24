@@ -26,6 +26,7 @@ import org.anikodev.candywrapper.core.json.obj
 import org.anikodev.candywrapper.core.json.str
 import org.anikodev.candywrapper.core.model.EnvironmentKind
 import org.anikodev.candywrapper.core.model.SavedEnvironment
+import org.anikodev.candywrapper.core.model.ThreadSummary
 import org.anikodev.candywrapper.core.store.MemoryCache
 import org.anikodev.candywrapper.core.store.MemorySecretStore
 import org.anikodev.candywrapper.core.sync.BearerCredentials
@@ -74,6 +75,31 @@ class SessionTest {
         assertEquals(7, shellRequest()!!.obj("payload")!!.long("afterSequence"))
         assertEquals(1, fake.ticketsMinted)
         second.stop()
+    }
+
+    @Test
+    fun openingAWokenThreadVisitsItAtTheWakeTime() = runBlocking {
+        // Snoozed until 09:20 and last seen at the snooze; nothing happened since, so `updatedAt` is older than the wake.
+        fake.threadExtra = ""","snoozedAt":"2026-10-09T09:12:47.701Z","snoozedUntil":"2026-10-09T09:20:00.000Z","lastVisitedAt":"2026-10-09T09:12:47.701Z""""
+        val secrets = MemorySecretStore()
+        val bearer = BearerCredentials(secrets).apply { save(fake.envId, AccessToken("tok", "Bearer", Long.MAX_VALUE)) }
+        val env = SavedEnvironment(fake.envId, "Mac", EnvironmentKind.PAIRED, fake.base, fake.wsBase)
+        val session = EnvironmentSession(env, null, MemoryCache(), secrets, bearer, scope).also { it.start() }
+        withTimeout(10_000) { session.state.first { it is ConnectionState.Live } }
+        val now = System.currentTimeMillis()
+        val row = withTimeout(10_000) { session.threads.first { it.threadCount == 1 } }.groups.single().threads.single()
+        assertTrue(row.isWoke(now))
+
+        val visit = row.visitOnView(now)!!
+        assertEquals(0, visit.delayMs)
+        session.visit(row.id, visit.atMs)
+        val sent = fake.frames.single { it.str("tag") == "orchestration.dispatchCommand" }.obj("payload")!!
+        assertEquals("thread.visit", sent.str("type"))
+        assertEquals("t", sent.str("threadId"))
+        assertEquals(ThreadSummary.time("2026-10-09T09:20:00.000Z"), ThreadSummary.time(sent.str("visitedAt")))
+        // The row clears before the server's echo.
+        assertTrue(session.threads.value.groups.single().threads.single().isWoke(now).not())
+        session.stop()
     }
 
     @Test

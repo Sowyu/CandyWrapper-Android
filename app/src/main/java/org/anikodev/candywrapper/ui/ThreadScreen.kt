@@ -224,13 +224,20 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
         }
     }
 
-    // Read receipts (protocol.md 7.9): at once for an unseen completion, else after 10 s of quiet.
+    // Read receipts (protocol.md 7.9): at once for a wake or an unseen completion, else after 10 s of quiet.
+    // A snooze that ends while the thread is open wakes it then, so the effect waits for that one moment.
     var visitSent by remember { mutableStateOf(0L) }
-    LaunchedEffect(summary?.updatedAt, summary?.visitedAt, summary?.unread, live) {
+    LaunchedEffect(summary, live) {
         val s = summary ?: return@LaunchedEffect
-        if (!live || s.updatedAt <= 0 || s.updatedAt <= maxOf(s.visitedAt, visitSent)) return@LaunchedEffect
-        if (!s.unread) delay(10_000)
-        runCatching { session.dispatch(Commands.visit(threadId, s.updatedAt)) }.onSuccess { visitSent = s.updatedAt }
+        if (!live) return@LaunchedEffect
+        val now = System.currentTimeMillis()
+        val visit = s.visitOnView(now, visitSent) ?: if (s.snoozedUntil > now) {
+            delay(s.snoozedUntil - now)
+            s.visitOnView(System.currentTimeMillis(), visitSent)
+        } else null
+        visit ?: return@LaunchedEffect
+        delay(visit.delayMs)
+        runCatching { session.visit(threadId, visit.atMs) }.onSuccess { visitSent = visit.atMs }
     }
 
     // First paint after open: the frame that shows the first rows.

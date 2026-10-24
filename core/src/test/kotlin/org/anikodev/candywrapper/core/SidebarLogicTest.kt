@@ -170,6 +170,67 @@ class SidebarLogicTest {
         assertFalse(woke.copy(section = 3).isWoke(now))
     }
 
+    @Test
+    fun viewingATimerWakeVisitsAtTheWakeTimeAtOnce() {
+        // Snoozed at 09:00 and seen then, woke at 09:30 with no activity since: `updatedAt` stays at the snooze.
+        val woke = t("a", """"updatedAt":"2026-09-12T09:00:00.000Z","snoozedUntil":"2026-09-12T09:30:00.000Z",
+            "snoozedAt":"2026-09-12T09:00:00.000Z","lastVisitedAt":"2026-09-12T09:00:00.000Z"""")
+        assertTrue(woke.isWoke(now))
+        // A visit at `updatedAt`, all the phone used to send, leaves the pill.
+        assertTrue(woke.visited(woke.updatedAt).isWoke(now))
+        val visit = woke.visitOnView(now)!!
+        assertEquals(ThreadSummary.Visit(ThreadSummary.time("2026-09-12T09:30:00.000Z"), 0), visit)
+        assertFalse(woke.visited(visit.atMs).isWoke(now))
+        // Sent once; the open thread does not send it again before the echo.
+        assertNull(woke.visitOnView(now, sentMs = visit.atMs))
+        assertNull(woke.visited(visit.atMs).visitOnView(now))
+    }
+
+    @Test
+    fun viewingARaisedHandVisitsAtOnceAndQuietActivityWaits() {
+        val raised = t("a", """"updatedAt":"2026-09-12T09:45:00.000Z","snoozedUntil":"2026-09-12T12:00:00.000Z","snoozedAt":"2026-09-12T09:00:00.000Z",
+            "lastVisitedAt":"2026-09-12T09:00:00.000Z","latestRunId":"r","status":"running","pendingRuntimeRequest":{"kind":"user_input"}""")
+        val visit = raised.visitOnView(now)!!
+        assertEquals(ThreadSummary.Visit(ThreadSummary.time("2026-09-12T09:45:00.000Z"), 0), visit)
+        assertFalse(raised.visited(visit.atMs).isWoke(now))
+        // Plain activity on a read thread waits for quiet; an unseen completion does not.
+        val busy = t("b", """"updatedAt":"2026-09-12T09:45:00.000Z","lastVisitedAt":"2026-09-12T09:00:00.000Z","latestRunId":"r","status":"running"""")
+        assertEquals(ThreadSummary.Visit(busy.updatedAt, ThreadSummary.VISIT_THROTTLE_MS), busy.visitOnView(now))
+        val done = t("c", """"updatedAt":"2026-09-12T09:45:00.000Z","lastVisitedAt":"2026-09-12T09:00:00.000Z","latestRunId":"r","status":"completed",
+            "latestRunCompletedAt":"2026-09-12T09:45:00.000Z"""")
+        assertTrue(done.unread)
+        assertEquals(ThreadSummary.Visit(done.updatedAt, 0), done.visitOnView(now))
+        assertFalse(done.visited(done.updatedAt).unread)
+        assertNull(t("d", """"lastVisitedAt":"2026-09-12T08:00:00.000Z"""").visitOnView(now))
+    }
+
+    @Test
+    fun aVisitShowsBeforeItsEchoAndUndoesOnFailure() {
+        val shell = ShellProjection()
+        val thread = """{"id":"a","projectId":"p","title":"A","status":"idle","latestRunId":null,"activeProviderThreadId":null,"createdAt":"2026-09-12T08:00:00.000Z",
+            "updatedAt":"2026-09-12T09:00:00.000Z","snoozedUntil":"2026-09-12T09:30:00.000Z","snoozedAt":"2026-09-12T09:00:00.000Z",
+            "lastVisitedAt":"2026-09-12T09:00:00.000Z","lineage":{"relationshipToParent":null}}"""
+        shell.apply(json("""{"kind":"snapshot","snapshot":{"snapshotSequence":1,"projects":[{"id":"p","title":"p","workspaceRoot":"/p"}],"threads":[$thread]}}"""), now)
+        fun row() = shell.model(now).groups.flatMap { it.threads }.single()
+        val wake = ThreadSummary.time("2026-09-12T09:30:00.000Z")
+        assertTrue(row().isWoke(now))
+        assertTrue(shell.visit("a", wake))
+        assertFalse(row().isWoke(now))
+        // A row from before the server applied the visit keeps the local one on top.
+        shell.apply(json("""{"kind":"thread.updated","sequence":2,"thread":${thread.replace("\"title\":\"A\"", "\"title\":\"B\"")}}"""), now)
+        assertEquals("B", row().title)
+        assertFalse(row().isWoke(now))
+        // A failed visit puts the server's row back.
+        assertTrue(shell.visitFailed("a", wake))
+        assertTrue(row().isWoke(now))
+        assertEquals("B", row().title)
+        // The echo moves the server's watermark, and the local visit is no longer needed.
+        shell.visit("a", wake)
+        shell.apply(json("""{"kind":"thread.updated","sequence":3,"thread":${thread.replace("\"lastVisitedAt\":\"2026-09-12T09:00:00.000Z\"", "\"lastVisitedAt\":\"2026-09-12T09:30:00.000Z\"")}}"""), now)
+        assertFalse(row().isWoke(now))
+        assertFalse(shell.visitFailed("a", wake))
+    }
+
     // resolveSnoozePresets, snoozeWakeLabel
 
     @Test

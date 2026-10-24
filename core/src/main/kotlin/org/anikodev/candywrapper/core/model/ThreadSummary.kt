@@ -75,7 +75,30 @@ data class ThreadSummary(
         return woke > 0 && (visitedAt == 0L || visitedAt < woke) && section != 3
     }
 
+    /**
+     * The `thread.visit` viewing this thread sends (protocol.md 7.9), or null when [sentMs] or the
+     * server's watermark already covers it. A wake goes at once at its wake time, so opening the
+     * thread clears Woke as CandyWrapper's `ThreadSession.syncVisit` does: a timer wake is later
+     * than `updatedAt`, so a visit at `updatedAt` alone would never clear it. An unseen completion
+     * goes at once too, other activity after [VISIT_THROTTLE_MS].
+     */
+    fun visitOnView(nowMs: Long, sentMs: Long = 0): Visit? {
+        val seen = maxOf(visitedAt, sentMs)
+        if (isWoke(nowMs)) maxOf(updatedAt, wokeAtAt(nowMs)).let { at -> if (at > seen) return Visit(at, 0) }
+        if (updatedAt <= seen) return null
+        return Visit(updatedAt, if (unread) 0 else VISIT_THROTTLE_MS)
+    }
+
+    /** This row as a visit at [atMs] leaves it, before the server's echo. */
+    fun visited(atMs: Long): ThreadSummary =
+        if (atMs <= visitedAt) this else copy(visitedAt = atMs, unread = unread && atMs < updatedAt)
+
+    data class Visit(val atMs: Long, val delayMs: Long)
+
     companion object {
+        /** `VISIT_DISPATCH_THROTTLE_MS` (ChatView.tsx:622): activity on the open thread is visited after this much quiet. */
+        const val VISIT_THROTTLE_MS = 10_000L
+
         /**
          * Decodes a shell thread. Null for rows the lists never show: subagent threads, archived or
          * deleted ones, and anything without an id. The archived list passes [archived] to keep its rows.

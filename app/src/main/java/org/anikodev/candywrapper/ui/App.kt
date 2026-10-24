@@ -358,7 +358,7 @@ private fun SidebarHost(
             },
             rename = { t -> renameNow(t) },
             toggleRead = { t ->
-                command(t) { s -> s.dispatch(if (t.unread) Commands.visit(t.id, t.updatedAt.takeIf { it > 0 } ?: System.currentTimeMillis()) else Commands.markUnread(t.id)) }
+                command(t) { s -> if (t.unread) s.visit(t.id, t.updatedAt.takeIf { it > 0 } ?: System.currentTimeMillis()) else s.dispatch(Commands.markUnread(t.id)) }
             },
             archive = { t ->
                 command(t) { s ->
@@ -388,7 +388,7 @@ private fun SidebarHost(
             },
             acknowledgeWoke = { t ->
                 val at = t.wokeAtAt(System.currentTimeMillis())
-                if (at > 0) command(t) { s -> s.dispatch(Commands.visit(t.id, at)) }
+                if (at > 0) command(t) { s -> s.visit(t.id, at) }
             },
             toggleArchived = {
                 archived = if (archived.open) ArchivedList() else ArchivedList(open = true)

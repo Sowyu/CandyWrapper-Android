@@ -25,6 +25,8 @@ class ShellProjection(cached: CachedShell? = null, private val envId: String = "
         private set
     private val projects = LinkedHashMap<String, ProjectSummary>()
     private val threads = HashMap<String, ThreadSummary>()
+    /** Visits sent and not yet echoed: the watermark and the server's row under it (CandyWrapper's `localVisits`). */
+    private val localVisits = HashMap<String, Pair<Long, ThreadSummary>>()
 
     /**
      * The Orchestrator's view of every active thread, subagents included, only while [trackRaw] is on. The cache
@@ -79,7 +81,8 @@ class ShellProjection(cached: CachedShell? = null, private val envId: String = "
                 projects.clear()
                 threads.clear()
                 snap.arr("projects")?.forEach { (it as? JsonObject)?.let { p -> project(p, envId) }?.let { p -> projects[p.id] = p } }
-                snap.arr("threads")?.forEach { (it as? JsonObject)?.let { t -> ThreadSummary.fromShell(t, nowMs, envId = envId) }?.let { t -> threads[t.id] = t } }
+                snap.arr("threads")?.forEach { (it as? JsonObject)?.let { t -> ThreadSummary.fromShell(t, nowMs, envId = envId) }?.let { t -> threads[t.id] = withLocalVisit(t) } }
+                localVisits.keys.retainAll(threads.keys)
                 sequence = snap.long("snapshotSequence") ?: 0
                 if (trackRaw) {
                     raw.clear()
@@ -120,7 +123,7 @@ class ShellProjection(cached: CachedShell? = null, private val envId: String = "
                     val t = if (item.str("location") == "active" || item.str("location") == null) OrchThread.from(o, envId) else null
                     if (t == null) { if (raw.remove(id) != null) rawChanged = true } else if (raw.put(id, t) != t) rawChanged = true
                 }
-                val summary = if (item.str("location") == "active" || item.str("location") == null) ThreadSummary.fromShell(o, nowMs, envId = envId) else null
+                val summary = if (item.str("location") == "active" || item.str("location") == null) ThreadSummary.fromShell(o, nowMs, envId = envId)?.let(::withLocalVisit) else null
                 if (summary == null) removeThread(id) else {
                     if (threads[id] == summary) return false
                     threads[id] = summary
@@ -162,7 +165,40 @@ class ShellProjection(cached: CachedShell? = null, private val envId: String = "
         return changed
     }
 
+    /**
+     * Shows a visit at [atMs] before the server echoes it, so the row's Woke and unread clear at once.
+     * Returns true when the visible list changed.
+     */
+    fun visit(id: String, atMs: Long): Boolean {
+        val row = threads[id] ?: return false
+        if (atMs <= row.visitedAt) return false
+        localVisits[id] = atMs to (localVisits[id]?.second ?: row)
+        threads[id] = row.visited(atMs)
+        return true
+    }
+
+    /** The visit at [atMs] failed: the row goes back to what the server last said. */
+    fun visitFailed(id: String, atMs: Long): Boolean {
+        val (at, server) = localVisits[id]?.takeIf { it.first == atMs } ?: return false
+        localVisits.remove(id)
+        if (threads[id] != server.visited(at)) return false
+        threads[id] = server
+        return true
+    }
+
+    /** A server row with the unechoed visit on top; the visit is forgotten once the server has caught up. */
+    private fun withLocalVisit(row: ThreadSummary): ThreadSummary {
+        val at = localVisits[row.id]?.first ?: return row
+        if (row.visitedAt >= at) {
+            localVisits.remove(row.id)
+            return row
+        }
+        localVisits[row.id] = at to row
+        return row.visited(at)
+    }
+
     private fun removeThread(id: String): Boolean {
+        localVisits.remove(id)
         removedThreads += id
         dirtyThreads -= id
         return threads.remove(id) != null

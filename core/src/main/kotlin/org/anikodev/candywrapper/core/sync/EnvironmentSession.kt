@@ -264,6 +264,24 @@ class EnvironmentSession(
         return result?.long("sequence") ?: 0
     }
 
+    /**
+     * Sends `thread.visit` at [atMs] and shows it in [threads] before the echo, so Woke and unread
+     * clear the moment the thread is seen. A failed visit puts the row back.
+     */
+    suspend fun visit(threadId: String, atMs: Long) {
+        publishShell { shell.visit(threadId, atMs) }
+        try {
+            dispatch(Commands.visit(threadId, atMs))
+        } catch (e: Throwable) {
+            publishShell { shell.visitFailed(threadId, atMs) }
+            throw e
+        }
+    }
+
+    private inline fun publishShell(change: () -> Boolean) = synchronized(shellLock) {
+        if (change()) _threads.value = shell.model()
+    }
+
     /** An authorized GET on the route the socket uses, with the orchestration protocol header (protocol.md 5.1). */
     suspend fun getJson(path: String, query: Map<String, String>): JsonObject {
         val env = _env.value
