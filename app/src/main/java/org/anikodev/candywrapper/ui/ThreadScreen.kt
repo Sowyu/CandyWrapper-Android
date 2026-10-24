@@ -80,6 +80,7 @@ import org.anikodev.candywrapper.core.sync.EnvironmentSession
 import org.anikodev.candywrapper.core.sync.ThreadSession
 import org.anikodev.candywrapper.core.sync.TimelineItem
 import org.anikodev.candywrapper.core.sync.TimelineRow
+import org.anikodev.candywrapper.core.composer.SlashMenu
 import org.anikodev.candywrapper.core.sync.ToolGroup
 import org.anikodev.candywrapper.core.sync.UploadedAttachment
 import org.anikodev.candywrapper.core.timing.Timeline
@@ -250,6 +251,7 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
         else -> null
     }
     val settings = ComposerSettings(state.meta.model, state.meta.runtimeMode, modeChoice.mode)
+    val compactable = remember(state.items) { SlashMenu.hasCompactableConversation(state.items.asSequence().filterIsInstance<TimelineRow>().map { it.row }) }
 
     var viewing by remember(threadId) { mutableStateOf<ViewerState?>(null) }
     val images = remember(session, threadId) { SessionImages(graph.images, session, threadId) { items, index -> viewing = ViewerState(items, index) } }
@@ -342,6 +344,10 @@ fun ThreadScreen(graph: AppGraph, nav: Navigator, envId: String, threadId: Strin
                 trayAbove = pending != null || state.queued.isNotEmpty() || stashOpen || stashed.isNotEmpty(),
                 onStash = ::stashDraft,
                 onPaste = { uris -> scope.receivePasted(context, uris, MAX_PICKS - files.size) { if (files.size < MAX_PICKS) files += it } },
+                // ponytail: the project's checkout, where T3 scans the thread's worktree; read the thread's worktreePath if worktree-only commands go missing
+                workspace = project?.workspaceRoot?.ifBlank { null },
+                canCompact = live && compactable && !state.running && pending == null && summary?.pill != StatusPill.WORKING,
+                onScanWorkspace = session::refreshWorkspace,
                 footer = {
                     val env by session.env.collectAsStateWithLifecycle()
                     DeviceRow(env.label, live)
@@ -614,6 +620,8 @@ fun NewThreadScreen(graph: AppGraph, nav: Navigator, envId: String, projectId: S
                     onStop = {},
                     onDismissError = { error = null },
                     onPaste = { uris -> scope.receivePasted(context, uris, MAX_PICKS - files.size) { if (files.size < MAX_PICKS) files += it } },
+                    workspace = project?.workspaceRoot?.ifBlank { null },
+                    onScanWorkspace = session::refreshWorkspace,
                 )
             }
         }

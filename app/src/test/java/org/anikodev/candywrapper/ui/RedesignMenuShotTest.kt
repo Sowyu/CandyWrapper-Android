@@ -26,7 +26,7 @@ class RedesignMenuShotTest {
         },
     )
 
-    private fun picker(dark: Boolean, name: String = "model-picker-phone") {
+    private fun picker(dark: Boolean, name: String = "model-picker-phone", text: String = "", menu: Picker? = Picker.MODEL) {
         wallClock = { Fixtures.NOW }
         compose.setContent {
             CandyTheme(if (dark) ThemeChoice.DARK else ThemeChoice.LIGHT, RedesignStyle(on = true)) {
@@ -34,10 +34,10 @@ class RedesignMenuShotTest {
                     AppShell(DrawerState(open = false), sidebar = {}) {
                         ThreadShotTest.ThreadScreenFixture {
                             Composer(
-                                text = "", onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = server,
+                                text = text, onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = server,
                                 running = false, canStop = false, files = emptyList(), busy = null, error = null, connected = true,
                                 onModel = {}, onRuntimeMode = {}, onTogglePlan = null, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
-                                onStop = {}, onDismissError = {}, initialMenu = Picker.MODEL, onStash = {},
+                                onStop = {}, onDismissError = {}, initialMenu = menu, onStash = {},
                             )
                         }
                     }
@@ -56,4 +56,8 @@ class RedesignMenuShotTest {
     @Test fun pickerDark() = picker(true)
     @Config(qualifiers = TABLET) @Test fun pickerTabletLight() = picker(false, "model-picker-tablet")
     @Config(qualifiers = TABLET) @Test fun pickerTabletDark() = picker(true, "model-picker-tablet")
+
+    /** The slash command menu on the frosted popover. */
+    @Test fun slashLight() = picker(false, "slash-menu-phone", text = "/", menu = null)
+    @Test fun slashDark() = picker(true, "slash-menu-phone", text = "/", menu = null)
 }

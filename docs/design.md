@@ -51,6 +51,10 @@ CandyWrapper for Android copies T3 Code's desktop app, adapted to a phone. T3's 
 | Parking the open thread with no card left opens a new thread | Opens the empty state, with the sidebar | A phone lands in the sidebar to pick the next one |
 | A lucide project icon draws that icon in its colour | The monogram in the icon's colour | The app carries only the lucide icons it uses; T3's own mobile app does the same |
 | SVG project icons draw in the browser | A small SVG reader draws paths, shapes, solid fills and strokes; a gradient paints as its average colour, clip paths and masks are skipped; an SVG it cannot read, and `.icns` files, keep the monogram | Android has no SVG decoder and the dependencies stay fixed |
+| The `/` menu highlights a row and takes arrow keys and Enter | Rows are 44dp tap targets with no highlight; Back closes the menu as Escape does | No hardware keyboard to drive a highlight on a phone |
+| Skill badges in the `/` menu carry a lucide glyph | The source word only (Personal, Repo, System) | `user-round` is not in CandyWrapper's icon set |
+| The `/` menu scans the thread's worktree for commands and skills | It scans the project's checkout | The client does not read the thread's worktree path |
+| `/usage-limits` opens the usage panel | Not offered | The server adds it only for clients that ask, and there is no panel here |
 | The machine switcher (not in T3) | Lists All machines first when there are several, and starts there | The phone reads several computers; T3's sidebar always merges every connected environment |
 
 ## Redesign (Experimental)

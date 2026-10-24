@@ -24,6 +24,7 @@ Use the release APK when judging speed. Debug builds run Compose without optimiz
 - A live thread view: Markdown with coloured code blocks, tool calls that expand to their output or diff, run diffs from checkpoint cards, older history as you scroll up, and timestamps.
 - Images where T3 shows them: your attachments and the agent's, Markdown images, and the images a tool returned or looked at. Tap one for a full-screen viewer with pinch zoom, swipe down to close, Save to Pictures and Share.
 - A composer: send, queue or steer during a run, Stop, model and effort, access mode and image attachments, plus plan mode when it is turned on. Start a new thread in any project on any computer.
+- T3's slash command menu: type `/` in either composer for `/model`, `/plan` and `/default`, the provider's own commands and its skills, filtered as you type with T3's ranking. A tap inserts the command or runs T3's action. Back or a tap outside closes it.
 - A prompt stash, as in T3: Stash prompt (in the composer's ⋯ on a phone) keeps the draft and its images on the phone and clears the composer. The Stash tab over the composer lists the last 20, newest first, to restore, swap with the current draft, or delete. Nothing is sent to the computer.
 - Approvals and agent questions answered in place of the composer, and queued messages you can steer or cancel.
 - Opening a thread marks it read on the computer.
@@ -32,7 +33,7 @@ Use the release APK when judging speed. Debug builds run Compose without optimiz
 - Settings > Appearance > Experimental Orchestrator features, in Redesign: CandyWrapper's Orchestrator, one T3 thread that manages every other thread. The phone finds the one the Mac started, pins it above the threads with its bot, and opens a chat with an Overview and Needs you. It relays events and calls to every machine only while CandyWrapper on the Mac is closed and the phone is in front. [docs/orchestrator.md](docs/orchestrator.md) explains how the two share it.
 - A Timing screen with every startup, connect and thread-open step in milliseconds, also logged to logcat with tag `CWTiming`.
 
-Not built yet: terminal, HTML renders, file mentions and slash commands, editing queued messages, dragging threads to reorder them, a custom snooze time, and fork.
+Not built yet: terminal, HTML renders, file mentions and `$` skill search, editing queued messages, dragging threads to reorder them, a custom snooze time, and fork.
 
 ## Build
 

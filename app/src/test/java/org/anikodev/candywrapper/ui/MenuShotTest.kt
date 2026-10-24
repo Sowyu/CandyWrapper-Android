@@ -39,9 +39,9 @@ class MenuShotTest {
     }
 
     @Composable
-    private fun ComposerWith(menu: Picker) = Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+    private fun ComposerWith(menu: Picker?, text: String = "") = Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         Composer(
-            text = "", onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
+            text = text, onText = {}, settings = ComposerSettings(ThreadFixtures.model, "full-access", "default"), server = ThreadFixtures.server,
             running = false, canStop = false, files = emptyList(), busy = null, error = null, connected = true,
             onModel = {}, onRuntimeMode = {}, onTogglePlan = {}, onAttach = {}, onRemoveFile = {}, onSend = {}, onQueue = null, onSteer = null,
             onStop = {}, onDismissError = {}, initialMenu = menu, onStash = {},
@@ -54,6 +54,11 @@ class MenuShotTest {
     @Test fun effortMenuDark() = screen("menu-effort-phone", true) { ComposerWith(Picker.OPTIONS) }
     @Test fun modelMenuLight() = screen("menu-model-phone", false) { ComposerWith(Picker.MODEL) }
     @Test fun modelMenuDark() = screen("menu-model-phone", true) { ComposerWith(Picker.MODEL) }
+    /** "/" opens T3's commands and skills; "/re" filters them. */
+    @Test fun slashMenuLight() = screen("menu-slash-phone", false) { ComposerWith(null, "/") }
+    @Test fun slashMenuDark() = screen("menu-slash-phone", true) { ComposerWith(null, "/") }
+    @Test fun slashFilteredLight() = screen("menu-slash-filtered-phone", false) { ComposerWith(null, "/re") }
+    @Test fun slashFilteredDark() = screen("menu-slash-filtered-phone", true) { ComposerWith(null, "/re") }
 
     @Composable
     private fun Actions() = Column(Modifier.padding(top = 60.dp, start = 140.dp)) {

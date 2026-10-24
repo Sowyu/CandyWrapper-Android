@@ -11,6 +11,8 @@ import org.anikodev.candywrapper.core.model.OptionChoice
 import org.anikodev.candywrapper.core.model.OptionDescriptor
 import org.anikodev.candywrapper.core.model.OptionValue
 import org.anikodev.candywrapper.core.model.ProviderInfo
+import org.anikodev.candywrapper.core.model.ProviderSkill
+import org.anikodev.candywrapper.core.model.SlashCommand
 import org.anikodev.candywrapper.core.model.Question
 import org.anikodev.candywrapper.core.model.QuestionOption
 import org.anikodev.candywrapper.core.model.RowKind
@@ -99,6 +101,16 @@ object ThreadFixtures {
                     ModelInfo("claude-sonnet-5-5", "Claude Sonnet 5.5", emptyList()),
                 ),
                 showInteractionModeToggle = true, runtimeModes = emptyList(),
+                slashCommands = listOf(
+                    SlashCommand("review", "Review a pull request"),
+                    SlashCommand("init", "Initialize a new CLAUDE.md file with codebase documentation"),
+                    SlashCommand("compact", "Clear conversation history but keep a summary in context"),
+                    SlashCommand("security-review", "Complete a security review of the pending changes on the current branch"),
+                ),
+                skills = listOf(
+                    ProviderSkill("frontend-design", "/Users/anika/.claude/skills/frontend-design/SKILL.md", scope = "user", shortDescription = "Build distinctive, production-grade interfaces"),
+                    ProviderSkill("pdf", "/Users/anika/.claude/plugins/pdf/SKILL.md", scope = "system", displayName = "PDF", description = "Read, fill and merge PDF files"),
+                ),
             ),
             ProviderInfo("codex", "Codex", "codex", true, listOf(ModelInfo("gpt-6-astra", "GPT-6 Astra", emptyList())), true, emptyList()),
         ),

@@ -37,7 +37,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.roundToIntRect
+import org.anikodev.candywrapper.core.composer.SlashAction
+import org.anikodev.candywrapper.core.composer.SlashItem
+import org.anikodev.candywrapper.core.composer.SlashMenu
+import org.anikodev.candywrapper.core.composer.SlashTrigger
 import android.webkit.MimeTypeMap
 import java.io.File
 import java.util.UUID
@@ -212,6 +223,9 @@ fun Composer(
     trayAbove: Boolean = false,
     onStash: (() -> Unit)? = null,
     onPaste: ((List<Uri>) -> Unit)? = null,
+    workspace: String? = null,
+    canCompact: Boolean = false,
+    onScanWorkspace: ((instanceId: String, cwd: String) -> Unit)? = null,
     footer: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val c = Candy.colors
@@ -229,10 +243,36 @@ fun Composer(
     val canStash = busy == null && locked == null && (text.isNotBlank() || files.isNotEmpty())
     val provider = settings.model?.let { server.provider(it.instanceId) }
     val shape = RoundedCornerShape(Radius.composer)
+
+    // T3's slash command menu: a `/word` under the caret opens it; a tap outside or Back shuts it
+    // until the caret leaves that word.
+    val slashWord by remember(field) { derivedStateOf { SlashMenu.detect(field.text.toString(), field.selection.start, field.selection.end) } }
+    var dismissed by remember { mutableStateOf<SlashTrigger?>(null) }
+    LaunchedEffect(slashWord?.start) { if (dismissed?.start != slashWord?.start) dismissed = null }
+    val slash = slashWord?.takeIf { locked == null && menu == null && !it.sameWord(dismissed) }
+    val slashItems = slash?.let { SlashMenu.items(field.text.toString(), it, provider, workspace, onTogglePlan != null, canCompact && files.isEmpty()) }
+    val scanFor = settings.model?.instanceId?.takeIf { slash != null }
+    LaunchedEffect(scanFor, workspace) { if (scanFor != null && workspace != null) onScanWorkspace?.invoke(scanFor, workspace) }
+    // Registered as the menu opens; the last handler registered gets Back first.
+    if (slash != null) BackHandler { dismissed = slash }
+    val pickSlash: (SlashItem) -> Unit = pick@{ item ->
+        val word = slash ?: return@pick
+        val picked = SlashMenu.pick(field.text.toString(), word, item)
+        field.edit { replace(0, length, picked.text); selection = TextRange(picked.cursor) }
+        when (picked.action) {
+            SlashAction.OPEN_MODEL_PICKER -> menu = Picker.MODEL
+            SlashAction.PLAN_MODE -> if (settings.interactionMode != "plan") onTogglePlan?.invoke()
+            SlashAction.DEFAULT_MODE -> if (settings.interactionMode == "plan") onTogglePlan?.invoke()
+            SlashAction.NONE -> Unit
+        }
+    }
+    // The card's place in the window, read only by the open menu so moving it recomposes nothing else.
+    val anchor = remember { mutableStateOf(IntRect.Zero) }
     Column(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp, top = if (trayAbove) 0.dp else 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (error != null) Alert(error, NoticeTone.ERROR, action = "Dismiss", onAction = onDismissError)
         Column(
             Modifier.fillMaxWidth()
+                .onGloballyPositioned { anchor.value = it.boundsInWindow().roundToIntRect() }
                 .let {
                     when {
                         // Redesign: Capy's prompt bar, frosted over the art with the pills' rim and shadow.
@@ -243,6 +283,7 @@ fun Composer(
                 }
                 .clip(shape).let { if (c.redesign) it else it.background(c.card).border(1.dp, c.border, shape) },
         ) {
+            SlashCommandMenu(slashItems, { anchor.value }, onPick = pickSlash, onDismiss = { dismissed = slash })
             if (files.isNotEmpty()) {
                 val refs = remember(files.toList()) { files.filter { it.isImage }.map { it.ref } }
                 Row(
