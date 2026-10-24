@@ -35,6 +35,15 @@ object OrchestratorSettingsSync {
     val keys = listOf("name", "prompt", "environmentId", "homeProjectId", "crewLimit", "models", "closedCheckMinutes",
         "askFirstMinutes", "handsOff", "botShape", "botColor") + Notebook.names.map { "notebook.$it" }
 
+    /**
+     * Each stashed prompt is a key of its own, `stash.<id>`, so two devices stashing at once both keep theirs. A
+     * restored or deleted one stays as null for [STASH_TOMBSTONE_MS], so devices that still list it drop it too, then goes.
+     */
+    const val STASH_PREFIX = "stash."
+    const val STASH_TOMBSTONE_MS = 30L * 86_400_000
+
+    private fun isStash(key: String) = key.startsWith(STASH_PREFIX)
+
     /** When a setting was last set and by which device. The later one wins; on a tie the larger device id does. */
     @Serializable
     data class Stamp(val at: Long, val by: String) {
@@ -95,6 +104,7 @@ object OrchestratorSettingsSync {
         put("botShape", JsonPrimitive(config.botShape))
         put("botColor", JsonPrimitive(config.botColor))
         for (n in Notebook.names) put("notebook.$n", JsonPrimitive(config.note(n)))
+        for (e in config.stash) put(STASH_PREFIX + e.id, JsonObject(mapOf("prompt" to JsonPrimitive(e.prompt), "createdAt" to JsonPrimitive(e.createdAt))))
     }
 
     /**
@@ -104,6 +114,16 @@ object OrchestratorSettingsSync {
     fun applying(key: String, value: JsonElement, config: OrchestratorConfig): OrchestratorConfig {
         val d = OrchestratorConfig()
         val isNull = value is JsonNull
+        if (isStash(key)) {
+            val id = key.removePrefix(STASH_PREFIX)
+            val rest = config.stash.filterNot { it.id == id }
+            if (isNull) return config.copy(stash = rest)
+            val o = value as? JsonObject ?: return config
+            val prompt = string(o["prompt"]) ?: return config
+            val createdAt = string(o["createdAt"]) ?: return config
+            if (id.isEmpty()) return config
+            return config.copy(stash = OrchestratorStashEntry.sorted(rest + OrchestratorStashEntry(id, prompt, createdAt)))
+        }
         if (key.startsWith("notebook.")) {
             val text = string(value) ?: return config
             return config.withNote(key.removePrefix("notebook."), text)
@@ -129,7 +149,8 @@ object OrchestratorSettingsSync {
     fun stamps(old: OrchestratorConfig, new: OrchestratorConfig, into: Map<String, Stamp>, now: Long, device: String): Map<String, Stamp> {
         val before = values(old)
         val after = values(new)
-        val changed = keys.filter { before[it] != after[it] }
+        // A stashed prompt that went is a change too: its key reads null from now on.
+        val changed = (keys + (before.keys + after.keys).filter(::isStash)).filter { before[it] != after[it] }
         if (changed.isEmpty()) return into
         return into + changed.associateWith { Stamp(now, device) }
     }
@@ -149,7 +170,10 @@ object OrchestratorSettingsSync {
      * [machine] is the machine the documents live on, which a null `environmentId` in them means. [home] is the
      * Orchestrator's machine on this device, which its null `environmentId` means; the same machine unless it just moved.
      */
-    fun merge(config: OrchestratorConfig, stamps: Map<String, Stamp>, documents: List<Document>, machine: String, home: String? = null): Merge {
+    fun merge(
+        config: OrchestratorConfig, stamps: Map<String, Stamp>, documents: List<Document>, machine: String, home: String? = null,
+        now: Long = System.currentTimeMillis(),
+    ): Merge {
         val remote = LinkedHashMap<String, Entry>()
         for (doc in documents) for ((key, entry) in doc.settings) {
             val seen = remote[key]
@@ -159,7 +183,8 @@ object OrchestratorSettingsSync {
         val nextStamps = stamps.toMutableMap()
         val out = LinkedHashMap(remote)
         val mine = values(config, home ?: machine)
-        for (key in keys) {
+        val stashKeys = (remote.keys + stamps.keys + mine.keys).filter(::isStash).toSortedSet()
+        for (key in keys + stashKeys) {
             val local = stamps[key]
             val entry = remote[key]
             if (entry != null && (local == null || entry.stamp.beats(local))) {
@@ -168,6 +193,14 @@ object OrchestratorSettingsSync {
                 nextStamps[key] = entry.stamp
             } else if (local != null && (entry == null || local.beats(entry.stamp))) {
                 out[key] = Entry(mine[key] ?: JsonNull, local)
+            }
+        }
+        // Removed stashed prompts are forgotten once every device had a month to see them go.
+        for (key in stashKeys) {
+            val e = out[key] ?: continue
+            if (e.value is JsonNull && now - e.at > STASH_TOMBSTONE_MS) {
+                out.remove(key)
+                nextStamps.remove(key)
             }
         }
         val merged = Document(out)

@@ -1,9 +1,13 @@
 package org.anikodev.candywrapper.core.orchestrator
 
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlinx.serialization.Serializable
 import org.anikodev.candywrapper.core.model.ModelSelection
 import org.anikodev.candywrapper.core.model.OptionValue
+import org.anikodev.candywrapper.core.stash.StashEntry
 
 // The Orchestrator (CandyWrapper docs/orchestrator.md, this repo's docs/orchestrator.md): one ordinary T3 thread per
 // machine that manages every thread through T3's own thread tools, plus what this phone relays. Everything here
@@ -35,6 +39,31 @@ data class OrchestratorModelRow(
             OrchestratorModelRow("quick", "Quick changes", "codex", "gpt-6.1-sol", listOf(OptionValue("reasoningEffort", "high")),
                 "Fast, quick changes that don't need the best quality code, like renames, config values and small one-file fixes."),
         )
+    }
+}
+
+/**
+ * A prompt saved from the Orchestrator's composer to send later (the Mac's `OrchestratorStashEntry`). Text only, since
+ * it goes to every device through the settings document as `stash.<id>` (CandyWrapper docs/orchestrator.md,
+ * "Settings on every device"). The thread composers' stash is a different one and stays on the phone.
+ */
+@Serializable
+data class OrchestratorStashEntry(val id: String, val prompt: String, val createdAt: String) {
+    /** As a thread stash entry, so the composer's stash list draws it. An unreadable `createdAt` reads as long ago. */
+    fun asStashEntry() = StashEntry(id, runCatching { Instant.parse(createdAt).toEpochMilli() }.getOrDefault(0L), prompt)
+
+    companion object {
+        /** `MAX_STASH_ENTRIES`, as the thread composers' stash. */
+        const val LIMIT = 20
+
+        /** `createdAt` as the Mac's `T3Timestamp` writes it: UTC with milliseconds. */
+        private val format = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
+
+        fun timestamp(ms: Long): String = format.format(Instant.ofEpochMilli(ms))
+
+        /** Newest first by `createdAt`, then by id, so every device lists them the same way. */
+        fun sorted(entries: List<OrchestratorStashEntry>): List<OrchestratorStashEntry> =
+            entries.sortedWith(compareByDescending<OrchestratorStashEntry> { it.createdAt }.thenByDescending { it.id })
     }
 }
 
@@ -93,6 +122,8 @@ data class OrchestratorConfig(
     val relayedAt: Map<String, Long> = emptyMap(),
     /** `env:thread` keys of the threads the relay launched, which count toward the worker limit. */
     val relayWorkers: Set<String> = emptySet(),
+    /** Its composer's stashed prompts, newest first, at most [OrchestratorStashEntry.LIMIT], shared with the other devices. */
+    val stash: List<OrchestratorStashEntry> = emptyList(),
 ) {
     /** The name it goes by: what you typed, else "Orchestrator". */
     val displayName: String get() = name.trim().ifEmpty { DEFAULT_NAME }
@@ -106,6 +137,17 @@ data class OrchestratorConfig(
     fun isOrchestrator(envId: String, threadId: String) = machines[envId]?.threadId == threadId
 
     fun note(name: String): String = notebook[name].orEmpty()
+
+    /**
+     * [prompt] stashed on top. A 21st pushes the oldest out; the settings sync writes null to its key like any
+     * removal, so every device drops it.
+     */
+    fun stashing(prompt: String, nowMs: Long, id: String = UUID.randomUUID().toString().lowercase()) =
+        copy(stash = OrchestratorStashEntry.sorted(stash + OrchestratorStashEntry(id, prompt, OrchestratorStashEntry.timestamp(nowMs)))
+            .take(OrchestratorStashEntry.LIMIT))
+
+    /** Restored or deleted: gone here, and null in the document once it syncs. */
+    fun unstashing(id: String) = copy(stash = stash.filterNot { it.id == id })
 
     fun withNote(name: String, text: String) = copy(notebook = if (text.isEmpty()) notebook - name else notebook + (name to text))
 
