@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
+import java.time.Instant
 import kotlin.math.roundToInt
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -73,6 +74,31 @@ data class UsageWindow(val label: String, val usedPercent: Int)
 
 data class ModelInfo(val slug: String, val name: String, val options: List<OptionDescriptor>)
 
+/** `ServerProviderSlashCommand` (contracts `server.ts:101-106`): a command the provider expands from `/name`. */
+data class SlashCommand(val name: String, val description: String? = null, val inputHint: String? = null)
+
+/** `ServerProviderSkill` (contracts `server.ts:108-129`). */
+data class ProviderSkill(
+    val name: String,
+    val path: String,
+    val enabled: Boolean = true,
+    val description: String? = null,
+    val scope: String? = null,
+    val displayName: String? = null,
+    val shortDescription: String? = null,
+    /** False for Claude Code's `user-invocable: false`: only the agent may start it. */
+    val userInvocable: Boolean? = null,
+)
+
+/** `ServerProviderWorkspaceSnapshot`: the commands and skills the provider found in one checkout. */
+data class WorkspaceCatalog(
+    val cwd: String,
+    val checkedAtMs: Long,
+    val slashCommands: List<SlashCommand>,
+    val skills: List<ProviderSkill>,
+    val slashCommandsPending: Boolean = false,
+)
+
 /** One `ServerProvider` (protocol.md 9.6), trimmed to what the composer offers. */
 data class ProviderInfo(
     val instanceId: String,
@@ -91,8 +117,28 @@ data class ProviderInfo(
     val authLabel: String? = null,
     /** The most-used `usageLimits` window, when the provider reports any. */
     val usage: UsageWindow? = null,
+    val slashCommands: List<SlashCommand> = emptyList(),
+    val skills: List<ProviderSkill> = emptyList(),
+    val workspaces: List<WorkspaceCatalog> = emptyList(),
 ) {
     fun model(slug: String) = models.firstOrNull { it.slug == slug }
+
+    private fun workspace(cwd: String?) = cwd?.let { c -> workspaces.firstOrNull { it.cwd == c } }
+
+    /** client-runtime `resolveProviderSlashCommandsForCwd`: the checkout's list, else the provider's. */
+    fun slashCommandsFor(cwd: String?): List<SlashCommand> = workspace(cwd)?.slashCommands ?: slashCommands
+
+    /** client-runtime `resolveProviderSkillsForCwd`. */
+    fun skillsFor(cwd: String?): List<ProviderSkill> = workspace(cwd)?.skills ?: skills
+
+    /** `hasCurrentProviderWorkspaceSnapshot`: a finished scan of [cwd] younger than the 5 minute TTL. */
+    fun hasCurrentWorkspace(cwd: String?, nowMs: Long): Boolean =
+        workspace(cwd)?.let { !it.slashCommandsPending && nowMs - it.checkedAtMs < WORKSPACE_TTL_MS } == true
+
+    companion object {
+        /** contracts `PROVIDER_WORKSPACE_SNAPSHOT_TTL_MS`. */
+        const val WORKSPACE_TTL_MS = 5 * 60_000L
+    }
 }
 
 /**
@@ -126,6 +172,12 @@ data class ServerInfo(
 ) {
     fun provider(instanceId: String) = providers.firstOrNull { it.instanceId == instanceId }
 
+    /** `server.refreshProviders` answers with fresh providers; they replace the ones with the same instance. */
+    fun withProviders(fresh: List<ProviderInfo>): ServerInfo {
+        val byId = fresh.associateBy { it.instanceId }
+        return copy(providers = providers.map { byId[it.instanceId] ?: it } + fresh.filter { f -> providers.none { it.instanceId == f.instanceId } })
+    }
+
     /** The model a new thread starts on: the project's, then the server's, then the first ready model. */
     fun modelForNewThread(projectDefault: ModelSelection?): ModelSelection? =
         projectDefault ?: defaultModel ?: providers.firstOrNull { it.ready && it.models.isNotEmpty() }?.let { p ->
@@ -136,7 +188,7 @@ data class ServerInfo(
         val RUNTIME_MODES = listOf("approval-required", "auto-accept-edits", "auto", "full-access")
 
         fun parse(config: JsonObject): ServerInfo {
-            val providers = config.arr("providers").orEmpty().mapNotNull { (it as? JsonObject)?.let(::provider) }
+            val providers = providers(config)
             val settings = config.obj("settings")
             val caps = config.obj("environment")?.obj("capabilities")
             return ServerInfo(
@@ -147,6 +199,28 @@ data class ServerInfo(
                 threadSettlement = caps?.bool("threadSettlement") == true,
                 threadSnooze = caps?.bool("threadSnooze") == true,
                 threadPinning = caps?.bool("threadPinning") == true,
+            )
+        }
+
+        /** The `providers` array of `server.getConfig` or `server.refreshProviders`. */
+        fun providers(o: JsonObject): List<ProviderInfo> = o.arr("providers").orEmpty().mapNotNull { (it as? JsonObject)?.let(::provider) }
+
+        private fun slashCommands(a: JsonArray?) = a.orEmpty().mapNotNull { c ->
+            val co = c as? JsonObject ?: return@mapNotNull null
+            SlashCommand(co.str("name")?.trim()?.ifEmpty { null } ?: return@mapNotNull null, co.str("description"), co.obj("input")?.str("hint"))
+        }
+
+        private fun skills(a: JsonArray?) = a.orEmpty().mapNotNull { k ->
+            val ko = k as? JsonObject ?: return@mapNotNull null
+            ProviderSkill(
+                name = ko.str("name")?.trim()?.ifEmpty { null } ?: return@mapNotNull null,
+                path = ko.str("path").orEmpty(),
+                enabled = ko.bool("enabled") != false,
+                description = ko.str("description"),
+                scope = ko.str("scope"),
+                displayName = ko.str("displayName"),
+                shortDescription = ko.str("shortDescription"),
+                userInvocable = ko.bool("userInvocable"),
             )
         }
 
@@ -185,6 +259,18 @@ data class ServerInfo(
                 usage = o.obj("usageLimits")?.takeIf { it.obj("unavailable") == null }?.arr("windows").orEmpty()
                     .mapNotNull { w -> (w as? JsonObject)?.let { wo -> wo.str("label")?.let { l -> (wo["usedPercent"] as? JsonPrimitive)?.doubleOrNull?.let { UsageWindow(l, it.coerceIn(0.0, 100.0).roundToInt()) } } } }
                     .maxByOrNull { it.usedPercent },
+                slashCommands = slashCommands(o.arr("slashCommands")),
+                skills = skills(o.arr("skills")),
+                workspaces = o.arr("workspaceSnapshots").orEmpty().mapNotNull { w ->
+                    val wo = w as? JsonObject ?: return@mapNotNull null
+                    WorkspaceCatalog(
+                        cwd = wo.str("cwd") ?: return@mapNotNull null,
+                        checkedAtMs = wo.str("checkedAt")?.let { runCatching { Instant.parse(it).toEpochMilli() }.getOrNull() } ?: 0,
+                        slashCommands = slashCommands(wo.arr("slashCommands")),
+                        skills = skills(wo.arr("skills")),
+                        slashCommandsPending = wo.bool("slashCommandsPending") == true,
+                    )
+                },
             )
         }
     }

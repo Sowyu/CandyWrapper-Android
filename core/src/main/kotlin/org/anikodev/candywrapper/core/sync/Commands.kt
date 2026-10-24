@@ -173,6 +173,12 @@ object Commands {
             put("modelSelection", model.toJson())
         }
 
+    /** `server.refreshProviders` input (contracts `rpc.ts:608-617`): scan one provider's commands and skills in [cwd]. */
+    fun refreshProviders(instanceId: String, cwd: String) = buildJsonObject {
+        put("instanceId", instanceId)
+        put("cwd", cwd)
+    }
+
     private fun toJson(value: Any): JsonElement = when (value) {
         is JsonElement -> value
         is String -> JsonPrimitive(value)

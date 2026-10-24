@@ -14,6 +14,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -47,6 +48,7 @@ import org.anikodev.candywrapper.core.model.ThreadListModel
 import org.anikodev.candywrapper.core.model.DirectRoute
 import org.anikodev.candywrapper.core.model.EnvironmentKind
 import org.anikodev.candywrapper.core.model.SavedEnvironment
+import org.anikodev.candywrapper.core.model.ProviderInfo
 import org.anikodev.candywrapper.core.model.ServerInfo
 import org.anikodev.candywrapper.core.rpc.OkHttpRpcSocket
 import org.anikodev.candywrapper.core.rpc.RpcConnection
@@ -222,6 +224,33 @@ class EnvironmentSession(
         val result = request("orchestration.getArchivedShellSnapshot") as? JsonObject ?: return ThreadListModel()
         // Hundreds of archived threads take a moment to read and sort; keep it off the caller's thread.
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { ShellProjection.archivedModel(result, envId = id) }.also { Timeline.span("$trace.archived.loaded", start, "${it.threadCount} threads") }
+    }
+
+    private val workspaceAsked = HashMap<String, Long>()
+
+    /**
+     * Asks the provider to scan [cwd] for its commands and skills (`server.refreshProviders`), as T3's
+     * composer does when its menu needs them. A checkout with a current scan is skipped, and each is
+     * asked at most once per TTL, or again after 10 s when the scan failed or was still running. The
+     * answer replaces the provider in [server].
+     */
+    fun refreshWorkspace(instanceId: String, cwd: String) {
+        val now = System.currentTimeMillis()
+        if (_server.value.provider(instanceId)?.hasCurrentWorkspace(cwd, now) != false) return
+        val key = "$instanceId\u0000$cwd"
+        synchronized(workspaceAsked) {
+            if (workspaceAsked[key]?.let { now - it < ProviderInfo.WORKSPACE_TTL_MS } == true) return
+            workspaceAsked[key] = now
+        }
+        scope.launch(io) {
+            val start = Timeline.nowMs()
+            val fresh = runCatching { request("server.refreshProviders", Commands.refreshProviders(instanceId, cwd), timeoutMs = 30_000) as? JsonObject }
+                .getOrNull()?.let(ServerInfo::providers).orEmpty()
+            if (fresh.isNotEmpty()) _server.update { it.withProviders(fresh) }
+            val scanned = _server.value.provider(instanceId)?.hasCurrentWorkspace(cwd, System.currentTimeMillis()) == true
+            if (!scanned) synchronized(workspaceAsked) { workspaceAsked[key] = System.currentTimeMillis() - ProviderInfo.WORKSPACE_TTL_MS + 10_000 }
+            Timeline.span("$trace.workspace.refreshed", start, if (scanned) "scanned" else "not scanned")
+        }
     }
 
     /**
