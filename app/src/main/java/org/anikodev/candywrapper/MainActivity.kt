@@ -67,16 +67,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (graph.readyFlow.value) graph.environments.setForeground(true)
-        graph.orchestrator.foreground.value = true
+        graph.started.start()
         if (drawn) graph.updater.onForeground()
     }
 
     override fun onStop() {
         super.onStop()
-        if (graph.readyFlow.value) graph.environments.setForeground(false)
-        // The Orchestrator hands its "while closed" task back while it still can.
-        graph.orchestrator.foreground.value = false
+        graph.started.stop()
     }
 
     /** A pairing link shared to the app as text, or opened from a tapped link. */

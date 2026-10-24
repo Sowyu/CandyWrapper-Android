@@ -38,6 +38,7 @@ import org.anikodev.candywrapper.ui.ThemeChoice
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import org.anikodev.candywrapper.core.sync.StartedActivities
 import org.anikodev.candywrapper.update.Updater
 
 /**
@@ -63,6 +64,13 @@ class AppGraph(private val app: Application) {
         private set
 
     val updater by lazy { Updater(app, scope) }
+
+    /** The app's front and back, from every activity's start and stop; a link opened from another app runs a second one. */
+    val started = StartedActivities { foreground ->
+        if (_readyFlow.value) environments.setForeground(foreground)
+        // The Orchestrator hands its "while closed" task back while it still can.
+        orchestrator.foreground.value = foreground
+    }
 
     /** The prompt stash, on this phone only. Its file is read on the boot thread. */
     val stash by lazy { PromptStash(java.io.File(app.filesDir, "prompt-stash")) }

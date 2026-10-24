@@ -31,7 +31,10 @@ import org.anikodev.candywrapper.core.store.MemoryCache
 import org.anikodev.candywrapper.core.store.MemorySecretStore
 import org.anikodev.candywrapper.core.sync.BearerCredentials
 import org.anikodev.candywrapper.core.sync.ConnectionState
+import org.anikodev.candywrapper.core.sync.ConnectCredentials
 import org.anikodev.candywrapper.core.sync.EnvironmentSession
+import org.anikodev.candywrapper.core.sync.Environments
+import org.anikodev.candywrapper.core.sync.StartedActivities
 import org.anikodev.candywrapper.core.sync.Tracer
 
 class SessionTest {
@@ -100,6 +103,28 @@ class SessionTest {
         // The row clears before the server's echo.
         assertTrue(session.threads.value.groups.single().threads.single().isWoke(now).not())
         session.stop()
+    }
+
+    @Test
+    fun aComputerPairedFromALinkConnectsWhileTheFirstActivityStops() = runBlocking {
+        val secrets = MemorySecretStore()
+        val tokens = object : CloudTokens {
+            override fun accountId() = null
+            override suspend fun relayJwt(): String = error("not signed in")
+        }
+        val relay = RelayClient(SoftwareDPoPKey(), tokens, secrets, origin = fake.origin)
+        val authorizer = ConnectAuthorizer(relay, tokens, secrets)
+        val environments = Environments(MemoryCache(), secrets, BearerCredentials(secrets), ConnectCredentials(authorizer), authorizer, relay, scope)
+        val started = StartedActivities(environments::setForeground)
+        // The link opens a second activity, which starts before the first one stops.
+        started.start()
+        started.start()
+        started.stop()
+        val session = environments.pair("${fake.base}pair#token=PAIRCODE")
+        withTimeout(10_000) { session.state.first { it is ConnectionState.Live } }
+        // Going to the back still reaches the sessions.
+        started.stop()
+        assertTrue(fake.paths().contains("POST /oauth/token"))
     }
 
     @Test
